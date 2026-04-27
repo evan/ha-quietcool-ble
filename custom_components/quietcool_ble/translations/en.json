@@ -8,7 +8,7 @@
       },
       "pair": {
         "title": "Pair with {name}",
-        "description": "**Press the physical Pair button** on your QuietCool fan controller, then click Submit within a few seconds.\n\nThe Pair button is located on the fan's wall control unit or the controller mounted near the fan."
+        "description": "**Hold the physical Pair button** on your QuietCool fan controller until the light flashes, then click Submit.\n\nThe Pair button is located on the fan's wall control unit or the controller mounted near the fan."
       },
       "user": {
         "title": "Set up QuietCool BLE",

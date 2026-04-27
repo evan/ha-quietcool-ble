@@ -57,8 +57,8 @@ When your fan is powered on and in BLE range, HA will show a notification:
 
 1. Click **Configure** in the notification (or go to **Settings → Integrations → Add Integration → QuietCool BLE**)
 2. Confirm the device name and MAC address shown
-3. **Press the physical Pair button** on your QuietCool fan controller
-4. Immediately click **Submit** in the HA UI (within a few seconds of pressing the button)
+3. **Hold the physical Pair button** on your QuietCool fan controller until the light flashes
+4. Click **Submit** in the HA UI
 5. Done — the fan, temperature, and humidity entities appear automatically
 
 ### Finding the Pair Button
@@ -122,7 +122,7 @@ automation:
 - Try moving a BT proxy closer to the fan
 
 **Pairing failed:**
-- Press the Pair button on the fan first, then immediately submit in HA (the pairing window is short)
+- **Hold** the Pair button (not just press) until the light flashes, then click Submit in HA
 - Only one device can be paired at a time. If the QuietCool Android app was used recently, it may have claimed the pairing slot. Try again.
 
 **Integration shows "unavailable" after setup:**
