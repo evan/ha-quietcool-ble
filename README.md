@@ -5,16 +5,22 @@ Native Bluetooth Low Energy integration for QuietCool attic and whole-house fans
 [![HACS Custom Repository](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz)
 [![Validate](https://github.com/rwarner/ha-quietcool-ble/actions/workflows/validate.yml/badge.svg)](https://github.com/rwarner/ha-quietcool-ble/actions/workflows/validate.yml)
 
+## Status
+
+**This integration is in early testing.** The BLE protocol is confirmed from community reverse-engineering, but hardware validation with this specific integration is ongoing. If you try it, please [open an issue](https://github.com/rwarner/ha-quietcool-ble/issues) with your results.
+
 ## Supported Devices
 
 | Model | CFM | Speeds | BLE Name | Status |
 |---|---|---|---|---|
-| AFG SMT PRO-2.0 Smart Attic Fan | 1945 | Low / High | `ATTICFAN_*` | ✅ Confirmed working |
-| AFG SMT ES-2.0 / ES-3.0 | Various | Low / High | `ATTICFAN_*` | ✅ Confirmed by community |
-| AFG SMT NR-A (2022 revision) | Various | Low / High | `ATTICFAN_*` | ✅ Confirmed by community |
+| AFG SMT PRO-2.0 Smart Attic Fan | 1945 | Low / High | `ATTICFAN_*` | ⏳ Hardware testing in progress |
+| AFG SMT ES-2.0 / ES-3.0 | Various | Low / High | `ATTICFAN_*` | 🔲 Protocol confirmed, integration untested |
+| AFG SMT NR-A (2022 revision) | Various | Low / High | `ATTICFAN_*` | 🔲 Protocol confirmed, integration untested |
 | Other ESP32-based QuietCool controllers | Various | Unknown | `ATTICFAN_*` | 🔲 Untested |
 
 All supported controllers advertise over BLE with a name beginning with `ATTICFAN`.
+
+> **Firmware 3.9+ note:** Fan control (on/off, speed) works on all firmware versions. Temperature and humidity sensors are unavailable on firmware ≥ 3.9 until the V2 `GetWorkState` protocol code is confirmed — see [Protocol Research](#protocol-research).
 
 ## What You Get
 
