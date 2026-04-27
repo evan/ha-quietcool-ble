@@ -22,4 +22,4 @@ When your fan is powered on and in BLE range, HA will show a discovery notificat
 
 ## Note on Firmware 3.9+
 
-Devices running firmware 3.9 or newer use an updated BLE protocol. Fan control works on all firmware versions. Temperature and humidity sensors require a V2 protocol mapping that is still being reverse-engineered by the community — see the [GitHub repo](https://github.com/rwarner/hass-integration-quietcool) for tracking.
+Devices running firmware 3.9 or newer use an updated BLE protocol. Fan control works on all firmware versions. Temperature and humidity sensors require a V2 protocol mapping that is still being reverse-engineered by the community — see the [GitHub repo](https://github.com/rwarner/ha-quietcool-ble) for tracking.

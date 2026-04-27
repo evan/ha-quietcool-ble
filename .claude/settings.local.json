@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__plugin_compound-engineering_context7__query-docs",
+      "Bash(python3 -m py_compile custom_components/quietcool_ble/api.py)",
+      "Bash(python3 -m py_compile custom_components/quietcool_ble/coordinator.py)",
+      "Bash(python3 *)"
+    ]
+  }
+}

@@ -3,7 +3,7 @@
 Native Bluetooth Low Energy integration for QuietCool attic and whole-house fans. Auto-discovers fans, enables speed control, and exposes temperature and humidity sensors — all using the stock manufacturer firmware with no hardware modification required.
 
 [![HACS Custom Repository](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz)
-[![Validate](https://github.com/rwarner/hass-integration-quietcool/actions/workflows/validate.yml/badge.svg)](https://github.com/rwarner/hass-integration-quietcool/actions/workflows/validate.yml)
+[![Validate](https://github.com/rwarner/ha-quietcool-ble/actions/workflows/validate.yml/badge.svg)](https://github.com/rwarner/ha-quietcool-ble/actions/workflows/validate.yml)
 
 ## Supported Devices
 
@@ -35,7 +35,7 @@ All supported controllers advertise over BLE with a name beginning with `ATTICFA
 ### HACS (recommended)
 
 1. Open HACS → Integrations → ⋮ → Custom repositories
-2. Add `https://github.com/rwarner/hass-integration-quietcool` with category **Integration**
+2. Add `https://github.com/rwarner/ha-quietcool-ble` with category **Integration**
 3. Search for **QuietCool BLE** and install it
 4. Restart Home Assistant
 
@@ -202,7 +202,7 @@ If you have firmware ≥ 3.9 and want to help unlock temperature/humidity sensor
 - **[emerose/quietcool issues](https://github.com/emerose/quietcool/issues)** — the most active hub for protocol research; watch for PRs adding V2 GetWorkState support
 - **[Reddit thread (u/secretoftheeast)](https://www.reddit.com/r/homeassistant/comments/1kyv0pn/quietcool_whole_house_fan_home_assistant/)** — original V2 discovery post; u/secretoftheeast indicated a branch with further findings
 - **[HA Community thread](https://community.home-assistant.io/t/quietcool-integration/913242)** — user reports and firmware version notes
-- **[This repo's issues](https://github.com/rwarner/hass-integration-quietcool/issues)** — open an issue if you can BLE-sniff your device's `GetWorkState` response on firmware 3.9+
+- **[This repo's issues](https://github.com/rwarner/ha-quietcool-ble/issues)** — open an issue if you can BLE-sniff your device's `GetWorkState` response on firmware 3.9+
 
 The missing piece is the numeric API code for `GetWorkState` (and `SetMode`/`SetTime` if V1 format stops working on newer firmware). If you have a BLE sniffer (nRF Sniffer, Wireshark + HCI log, or the Android QuietCool app with BLE debugging) and firmware ≥ 3.9, capturing a `GetWorkState` exchange would unblock this.
 

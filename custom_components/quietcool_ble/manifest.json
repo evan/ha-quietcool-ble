@@ -2,8 +2,8 @@
   "domain": "quietcool_ble",
   "name": "QuietCool BLE",
   "config_flow": true,
-  "documentation": "https://github.com/rwarner/hass-integration-quietcool",
-  "issue_tracker": "https://github.com/rwarner/hass-integration-quietcool/issues",
+  "documentation": "https://github.com/rwarner/ha-quietcool-ble",
+  "issue_tracker": "https://github.com/rwarner/ha-quietcool-ble/issues",
   "dependencies": ["bluetooth_adapters"],
   "requirements": ["bleak-retry-connector>=3.0.0", "bluetooth-data-tools>=1.0.0"],
   "bluetooth": [
