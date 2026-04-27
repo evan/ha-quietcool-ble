@@ -4,13 +4,11 @@ Communicates with QuietCool attic fans over Bluetooth Low Energy using the
 stock manufacturer firmware — no firmware modification required.
 
 GetFanInfo is fetched once during setup and stored in ConfigEntry.data.
-The coordinator only polls GetWorkState on each 10-second cycle.
+The coordinator polls GetWorkState every POLL_INTERVAL_SECONDS seconds.
 """
 from __future__ import annotations
 
 import logging
-
-from bleak_retry_connector import BleakClientWithServiceCache, establish_connection
 
 from homeassistant.components.bluetooth import async_ble_device_from_address
 from homeassistant.config_entries import ConfigEntry
@@ -18,7 +16,6 @@ from homeassistant.const import CONF_ADDRESS
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 
-from . import api
 from .api import FanInfo, ProtocolVersion
 from .const import (
     CONF_FAN_MODEL,
@@ -27,7 +24,6 @@ from .const import (
     CONF_PHONE_ID,
     CONF_PROTOCOL,
     DOMAIN,
-    MAX_CONNECT_ATTEMPTS,
     PLATFORMS,
 )
 from .coordinator import QuietCoolBLECoordinator
@@ -40,42 +36,31 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     address: str = entry.data[CONF_ADDRESS]
     phone_id: str = entry.data[CONF_PHONE_ID]
 
-    # Build FanInfo from stored config entry data (fetched once during config flow)
+    # Build FanInfo from stored config entry data (fetched once during config flow).
+    # GetFanInfo sometimes returns bare numbers ("1") for Name/Model; treat those
+    # as meaningless and fall back to the BLE advertisement name (entry.title).
+    def _meaningful(s: str) -> bool:
+        return bool(s) and not s.strip().isdigit() and len(s.strip()) > 1
+
+    raw_name = entry.data.get(CONF_FAN_NAME, "")
+    raw_model = entry.data.get(CONF_FAN_MODEL, "")
     fan_info = FanInfo(
-        name=entry.data.get(CONF_FAN_NAME) or entry.title,
-        model=entry.data.get(CONF_FAN_MODEL, ""),
+        name=raw_name if _meaningful(raw_name) else entry.title,
+        model=raw_model if _meaningful(raw_model) else "",
         serial=entry.data.get(CONF_FAN_SERIAL, ""),
         protocol=entry.data.get(CONF_PROTOCOL, ProtocolVersion.V1),
     )
 
-    # Verify device is reachable before completing setup
-    device = async_ble_device_from_address(hass, address, connectable=True)
-    if device is None:
+    # Verify device is in BLE range before completing setup.
+    # We intentionally do NOT connect here — connecting then disconnecting
+    # causes many BLE devices to pause advertising, which prevents the
+    # coordinator from receiving the advertisement that triggers its first poll.
+    # Login/auth is handled inside the coordinator's _ensure_connected().
+    if async_ble_device_from_address(hass, address, connectable=True) is None:
         raise ConfigEntryNotReady(
             f"QuietCool {address} is not currently in BLE range. "
             "Ensure the fan is powered on and within Bluetooth range of HA."
         )
-
-    # Verify credentials by connecting briefly
-    try:
-        client = await establish_connection(
-            BleakClientWithServiceCache,
-            device,
-            address,
-            max_attempts=MAX_CONNECT_ATTEMPTS,
-        )
-        try:
-            authenticated = await api.login(client, phone_id)
-            if not authenticated:
-                # Re-trigger the reauth flow
-                entry.async_start_reauth(hass)
-                return False
-        finally:
-            await client.disconnect()
-    except Exception as err:
-        raise ConfigEntryNotReady(
-            f"Could not connect to QuietCool {address}: {err}"
-        ) from err
 
     coordinator = QuietCoolBLECoordinator(
         hass=hass,

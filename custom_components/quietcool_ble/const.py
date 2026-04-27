@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Final
 
 DOMAIN: Final = "quietcool_ble"
-PLATFORMS: Final = ["fan", "sensor"]
+PLATFORMS: Final = ["fan", "sensor", "select", "number"]
 
 # BLE protocol identifiers
 SERVICE_UUID: Final = "000000ff-0000-1000-8000-00805f9b34fb"

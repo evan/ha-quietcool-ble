@@ -90,6 +90,7 @@ _V2_WORK_STATE_KEYS: dict[str, str] = {
 class FanMode(StrEnum):
     IDLE = "Idle"
     TIMER = "Timer"
+    TH = "TH"  # Thermostat+Humidity smart mode
 
 
 class FanSpeed(StrEnum):
@@ -105,6 +106,7 @@ class FanState:
     humidity_percent: float | None  # Humidity_Sample / 10; None if sensor absent/error
     sensor_state: str | None = None  # "Normal", "Error", absent on older firmware
     protocol: str = ProtocolVersion.V1
+    remain_seconds: int = 0  # RemainHour*3600 + RemainMinute*60 + RemainSecond
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +115,28 @@ class FanInfo:
     model: str
     serial: str
     protocol: str = ProtocolVersion.V1  # detected during get_fan_info()
+
+
+@dataclass(frozen=True, slots=True)
+class FanVersion:
+    firmware: str    # e.g. "IT-BLT-ATTICFAN_V3.0"
+    hw_version: str  # e.g. "A"
+    protect_temp: int  # °F overtemp safety cutoff, e.g. 182
+    create_date: str   # e.g. "2023.07.25"
+
+
+@dataclass(frozen=True, slots=True)
+class FanParameters:
+    temp_h: int        # high temp threshold °F (smart mode activates above this)
+    temp_m: int        # medium temp threshold °F (2-speed fans: switches from LOW to HIGH)
+    temp_l: int        # low temp threshold °F (smart mode deactivates below this)
+    hum_h: int         # high humidity threshold % (smart mode activates above this)
+    hum_l: int         # low humidity threshold % (255 = unused)
+    hum_range: str     # humidity speed range "HIGH" or "LOW"
+    fan_type: str      # "TWO" = 2-speed
+    timer_hour: int    # default timer hours
+    timer_minute: int  # default timer minutes
+    timer_range: str   # fan speed for timer mode, "HIGH" or "LOW"
 
 
 class QuietCoolError(Exception):
@@ -223,6 +247,15 @@ async def get_work_state(client: BleakClient, protocol: str = ProtocolVersion.V1
         )
 
     resp = await _send_command(client, {"Api": "GetWorkState"})
+
+    # Log any keys we don't recognise — helps discover undocumented fields.
+    _KNOWN_WORK_STATE_KEYS = {
+        "Api", "Mode", "Range", "SensorState", "Temp_Sample", "Humidity_Sample",
+    }
+    unknown = {k: v for k, v in resp.items() if k not in _KNOWN_WORK_STATE_KEYS}
+    if unknown:
+        _LOGGER.info("QuietCool GetWorkState unknown fields: %s", unknown)
+
     raw_temp = resp.get("Temp_Sample")
     raw_hum = resp.get("Humidity_Sample")
     return FanState(
@@ -234,8 +267,8 @@ async def get_work_state(client: BleakClient, protocol: str = ProtocolVersion.V1
             else None
         ),
         humidity_percent=(
-            raw_hum / 10
-            if isinstance(raw_hum, (int, float)) and 0 <= raw_hum <= 1000
+            float(raw_hum)
+            if isinstance(raw_hum, (int, float)) and 0 <= raw_hum <= 100
             else None
         ),
         sensor_state=resp.get("SensorState"),
@@ -243,10 +276,52 @@ async def get_work_state(client: BleakClient, protocol: str = ProtocolVersion.V1
     )
 
 
+async def get_version(client: BleakClient) -> dict:
+    """Fetch firmware version string. Returns raw response dict."""
+    return await _send_command(client, {"Api": "GetVersion"})
+
+
+async def get_parameter(client: BleakClient) -> dict:
+    """Fetch device parameters — likely temperature thresholds for smart mode."""
+    return await _send_command(client, {"Api": "GetParameter"})
+
+
+async def get_remain_time(client: BleakClient) -> dict:
+    """Fetch remaining timer countdown."""
+    return await _send_command(client, {"Api": "GetRemainTime"})
+
+
+async def get_version_info(client: BleakClient) -> FanVersion:
+    """Fetch firmware version and device metadata."""
+    resp = await _send_command(client, {"Api": "GetVersion"})
+    return FanVersion(
+        firmware=str(resp.get("Version", ""))[:64].strip(),
+        hw_version=str(resp.get("HW_Version", ""))[:16].strip(),
+        protect_temp=int(resp.get("ProtectTemp", 0)),
+        create_date=str(resp.get("Create_Date", ""))[:32].strip(),
+    )
+
+
+async def get_parameters(client: BleakClient) -> FanParameters:
+    """Fetch smart mode and timer threshold parameters."""
+    resp = await _send_command(client, {"Api": "GetParameter"})
+    return FanParameters(
+        temp_h=int(resp.get("GetTemp_H", 85)),
+        temp_m=int(resp.get("GetTemp_M", 75)),
+        temp_l=int(resp.get("GetTemp_L", 65)),
+        hum_h=int(resp.get("GetHum_H", 90)),
+        hum_l=int(resp.get("GetHum_L", 255)),
+        hum_range=str(resp.get("GetHum_Range", FanSpeed.LOW)),
+        fan_type=str(resp.get("FanType", "TWO")),
+        timer_hour=int(resp.get("GetHour", 8)),
+        timer_minute=int(resp.get("GetMinute", 0)),
+        timer_range=str(resp.get("GetTime_Range", FanSpeed.LOW)),
+    )
+
+
 async def set_mode_idle(client: BleakClient, protocol: str = ProtocolVersion.V1) -> None:
     """Turn the fan off (Idle mode)."""
     if protocol == ProtocolVersion.V2:
-        # V2 SetMode code unknown — attempt V1 format (may work per u/secretoftheeast)
         _LOGGER.debug("V2 device: attempting SetMode Idle with V1 format")
     await _send_command(client, {"Api": "SetMode", "Mode": FanMode.IDLE})
 
@@ -275,6 +350,46 @@ async def set_mode_timer(
         },
     )
     await _send_command(client, {"Api": "SetMode", "Mode": FanMode.TIMER})
+
+
+async def set_mode_th(client: BleakClient, protocol: str = ProtocolVersion.V1) -> None:
+    """Activate smart Thermostat+Humidity (TH) mode."""
+    if protocol == ProtocolVersion.V2:
+        _LOGGER.debug("V2 device: attempting SetMode TH with V1 format")
+    await _send_command(client, {"Api": "SetMode", "Mode": FanMode.TH})
+
+
+async def set_temp_humidity(
+    client: BleakClient,
+    *,
+    temp_h: int,
+    temp_m: int,
+    temp_l: int,
+    hum_h: int,
+    hum_l: int,
+    hum_range: str,
+    protocol: str = ProtocolVersion.V1,
+) -> None:
+    """Write smart mode temperature/humidity thresholds to the device.
+
+    Uses SetTempHumidity command (confirmed from emerose/quietcool source).
+    All six fields are required — the device ignores partial writes.
+    """
+    if protocol == ProtocolVersion.V2:
+        _LOGGER.debug("V2 device: attempting SetTempHumidity with V1 format")
+    resp = await _send_command(
+        client,
+        {
+            "Api": "SetTempHumidity",
+            "SetTemp_H": temp_h,
+            "SetTemp_M": temp_m,
+            "SetTemp_L": temp_l,
+            "SetHum_H": hum_h,
+            "SetHum_L": hum_l,
+            "SetHum_Range": hum_range,
+        },
+    )
+    _LOGGER.debug("SetTempHumidity response: %s", resp)
 
 
 # ---------------------------------------------------------------------------
@@ -348,6 +463,7 @@ async def _send_command(client: BleakClient, payload: dict) -> dict:
             )
 
     # Register notify BEFORE writing
+    _LOGGER.debug("QuietCool BLE %s: registering notify", cmd_label)
     await client.start_notify(CHAR_UUID, handle_notify)
     try:
         raw = json.dumps(payload).encode("utf-8")

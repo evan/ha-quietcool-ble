@@ -1,34 +1,48 @@
 # QuietCool BLE — Home Assistant Integration
 
-Native Bluetooth Low Energy integration for QuietCool attic and whole-house fans. Auto-discovers fans, enables speed control, and exposes temperature and humidity sensors — all using the stock manufacturer firmware with no hardware modification required.
+Native Bluetooth Low Energy integration for QuietCool attic and whole-house fans. Auto-discovers fans, enables full speed and smart-mode control, and exposes temperature, humidity, and timer sensors — all using the stock manufacturer firmware with no hardware modification required.
 
 [![HACS Custom Repository](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz)
 [![Validate](https://github.com/rwarner/ha-quietcool-ble/actions/workflows/validate.yml/badge.svg)](https://github.com/rwarner/ha-quietcool-ble/actions/workflows/validate.yml)
 
 ## Status
 
-**This integration is in early testing.** The BLE protocol is confirmed from community reverse-engineering, but hardware validation with this specific integration is ongoing. If you try it, please [open an issue](https://github.com/rwarner/ha-quietcool-ble/issues) with your results.
+**Hardware-confirmed working** on the AFG SMT PRO-2.0 (firmware IT-BLT-ATTICFAN_V3.0). All 10 entities — fan control, smart mode, temperature, humidity, timers, and threshold configuration — verified on real hardware.
 
 ## Supported Devices
 
 | Model | CFM | Speeds | BLE Name | Status |
 |---|---|---|---|---|
-| AFG SMT PRO-2.0 Smart Attic Fan | 1945 | Low / High | `ATTICFAN_*` | ⏳ Hardware testing in progress |
-| AFG SMT ES-2.0 / ES-3.0 | Various | Low / High | `ATTICFAN_*` | 🔲 Protocol confirmed, integration untested |
-| AFG SMT NR-A (2022 revision) | Various | Low / High | `ATTICFAN_*` | 🔲 Protocol confirmed, integration untested |
+| AFG SMT PRO-2.0 Smart Attic Fan | 1945 | Low / High | `ATTICFAN_*` | ✅ Hardware confirmed |
+| AFG SMT ES-2.0 / ES-3.0 | Various | Low / High | `ATTICFAN_*` | 🔲 Protocol confirmed, untested |
+| AFG SMT NR-A (2022 revision) | Various | Low / High | `ATTICFAN_*` | 🔲 Protocol confirmed, untested |
 | Other ESP32-based QuietCool controllers | Various | Unknown | `ATTICFAN_*` | 🔲 Untested |
 
 All supported controllers advertise over BLE with a name beginning with `ATTICFAN`.
 
-> **Firmware 3.9+ note:** Fan control (on/off, speed) works on all firmware versions. Temperature and humidity sensors are unavailable on firmware ≥ 3.9 until the V2 `GetWorkState` protocol code is confirmed — see [Protocol Research](#protocol-research).
+> **Firmware 3.9+ note:** Fan control, smart mode, and threshold configuration work on all firmware versions. Temperature and humidity sensors are unavailable on firmware ≥ 3.9 until the V2 `GetWorkState` protocol code is confirmed — see [Protocol Research](#protocol-research).
 
 ## What You Get
 
-- **Fan entity** — turn on/off, select Low or High speed
-- **Temperature sensor** — attic temperature in °F (from the built-in SHT3x sensor)
-- **Humidity sensor** — attic humidity in %
-- **Auto-discovery** — HA detects the fan automatically when in Bluetooth range
-- **BT Proxy support** — works through [ESPHome Bluetooth Proxies](https://esphome.io/components/bluetooth_proxy.html) for extended range
+**Fan control**
+- Turn on / off
+- Low and High speed presets
+
+**Smart Mode (TH — Thermostat + Humidity)**
+- Automatic on/off based on attic temperature and humidity thresholds
+- Full threshold configuration from HA — no app required
+- Mode selector: Idle / Timer / TH
+
+**Sensors**
+- Attic temperature in °F
+- Attic humidity in %
+- Timer countdown (seconds remaining)
+- Protect temperature (overtemp safety cutoff — diagnostic)
+
+**General**
+- Auto-discovery — HA detects the fan automatically when in Bluetooth range
+- BT Proxy support — works through [ESPHome Bluetooth Proxies](https://esphome.io/components/bluetooth_proxy.html) for extended range
+- Firmware and hardware version shown in device info
 
 ## Prerequisites
 
@@ -59,46 +73,68 @@ When your fan is powered on and in BLE range, HA will show a notification:
 2. Confirm the device name and MAC address shown
 3. **Hold the physical Pair button** on your QuietCool fan controller until the light flashes
 4. Click **Submit** in the HA UI
-5. Done — the fan, temperature, and humidity entities appear automatically
+5. Done — all entities appear automatically
 
 ### Finding the Pair Button
 
 The Pair button is on the wall control unit or the small controller box mounted near the fan motor. It is typically labeled **"Pair"** or has a Bluetooth symbol. On the AFG SMT PRO-2.0, it is on the controller board inside the fan housing.
 
-## Pairing Diagram
-
-```
-QuietCool Fan Controller
-┌─────────────────────┐
-│  [PWR] [LOW] [HIGH] │
-│                     │
-│      [ PAIR ]  ←────┼── Press this, then submit in HA
-└─────────────────────┘
-```
-
 ## Entities
 
 | Entity | Type | Unit | Notes |
 |---|---|---|---|
-| Fan | `fan` | — | `turn_on`, `turn_off`, `Low`/`High` preset |
-| Temperature | `sensor` | °F | `Temp_Sample / 10`; e.g. `1071` → `107.1°F` |
-| Humidity | `sensor` | % | `Humidity_Sample / 10` |
+| Fan | `fan` | — | On/off, `Low` / `High` speed preset |
+| Mode | `select` | — | `Idle` / `Timer` / `TH` (smart mode) |
+| Temperature | `sensor` | °F | Attic temp: `Temp_Sample / 10` |
+| Humidity | `sensor` | % | Attic humidity: direct integer |
+| Timer Remaining | `sensor` | s | Countdown when in Timer mode |
+| Protect Temperature | `sensor` | °F | Overtemp safety cutoff (diagnostic) |
+| High Temp Threshold | `number` | °F | TH mode activates above this |
+| Medium Temp Threshold | `number` | °F | 2-speed fans switch LOW→HIGH above this |
+| Low Temp Threshold | `number` | °F | TH mode deactivates below this |
+| High Humidity Threshold | `number` | % | TH mode activates above this |
+
+## Smart Mode (TH)
+
+TH mode lets the fan controller automatically turn the fan on and off based on attic temperature and humidity. The thresholds are stored on the device and persist across power cycles and HA restarts.
+
+Select **TH** from the Mode dropdown to activate it. Adjust the threshold number entities to match your comfort targets — changes take effect immediately without restarting the fan.
+
+Example targets for a typical attic fan:
+- High Temp: 85–95°F (fan turns on)
+- Low Temp: 65–75°F (fan turns off)
+- High Humidity: 80–90%
 
 ## Automations
 
-**Turn on at Low speed when attic is above 90°F:**
+**Turn on at Low speed when attic exceeds 90°F:**
 ```yaml
 automation:
   trigger:
     platform: numeric_state
-    entity_id: sensor.atticfan_temperature
+    entity_id: sensor.attic_gable_fan_temperature
     above: 90
   action:
     service: fan.turn_on
     target:
-      entity_id: fan.atticfan
+      entity_id: fan.attic_gable_fan
     data:
       preset_mode: Low
+```
+
+**Switch to High speed above 100°F:**
+```yaml
+automation:
+  trigger:
+    platform: numeric_state
+    entity_id: sensor.attic_gable_fan_temperature
+    above: 100
+  action:
+    service: fan.turn_on
+    target:
+      entity_id: fan.attic_gable_fan
+    data:
+      preset_mode: High
 ```
 
 **Turn off when temperature drops below 75°F:**
@@ -106,12 +142,26 @@ automation:
 automation:
   trigger:
     platform: numeric_state
-    entity_id: sensor.atticfan_temperature
+    entity_id: sensor.attic_gable_fan_temperature
     below: 75
   action:
     service: fan.turn_off
     target:
-      entity_id: fan.atticfan
+      entity_id: fan.attic_gable_fan
+```
+
+**Activate TH smart mode at sunset:**
+```yaml
+automation:
+  trigger:
+    platform: sun
+    event: sunset
+  action:
+    service: select.select_option
+    target:
+      entity_id: select.attic_gable_fan_mode
+    data:
+      option: TH
 ```
 
 ## Troubleshooting
@@ -122,7 +172,7 @@ automation:
 - Try moving a BT proxy closer to the fan
 
 **Pairing failed:**
-- **Hold** the Pair button (not just press) until the light flashes, then click Submit in HA
+- **Hold** the Pair button (not just tap) until the light flashes, then click Submit in HA
 - Only one device can be paired at a time. If the QuietCool Android app was used recently, it may have claimed the pairing slot. Try again.
 
 **Integration shows "unavailable" after setup:**
@@ -130,11 +180,12 @@ automation:
 - In HA: Settings → Integrations → QuietCool BLE → ⋮ → Reload
 
 **QuietCool app stopped working after setup:**
-The fan stores exactly one pairing credential. Pairing with the QuietCool Android app will break this integration until you re-pair (Settings → Integrations → QuietCool BLE → ⋮ → Re-authenticate).
+The fan stores exactly one pairing credential. Pairing with the QuietCool Android app will overwrite it and break this integration until you re-pair (Settings → Integrations → QuietCool BLE → ⋮ → Re-authenticate).
+
+**Threshold changes not sticking:**
+Thresholds are written with the `SetTempHumidity` command and confirmed with a `GetParameter` read on the next poll. If the UI shows the new value but the next poll reverts it, open an issue with your debug logs.
 
 **Enabling debug logs:**
-
-Add this to your `configuration.yaml` to capture full BLE protocol traffic:
 
 ```yaml
 logger:
@@ -143,27 +194,20 @@ logger:
     custom_components.quietcool_ble: debug
 ```
 
-Restart HA, then reproduce the problem. Logs appear in **Settings → System → Logs**. Each BLE command and its response are logged at `DEBUG` level, e.g.:
-
-```
-QuietCool BLE GetFanInfo → {'Name': 'ATTICFAN_XXXX', 'Model': 'AFG SMT PRO-2.0', ...}
-```
-
-If filing a bug report, please include the debug log output from the connection attempt.
+Restart HA, then reproduce the problem. Logs appear in **Settings → System → Logs**. Each BLE command and its raw JSON response are logged at `DEBUG` level.
 
 ## Security
 
-This integration communicates directly with your fan over Bluetooth Low Energy. Be aware of the following:
+This integration communicates directly with your fan over Bluetooth Low Energy. Be aware:
 
-- **No link-layer encryption.** BLE communication is unencrypted. Anyone within ~10 meters with a BLE sniffer can passively observe commands. This is a firmware limitation that cannot be fixed in the integration.
-- **Replay possible.** Captured BLE commands can be replayed by someone within physical BLE range. Practical risk is low but non-zero in shared buildings (apartments, offices).
-- **Single pairing credential.** The device stores one credential. Pairing another client (e.g., the QuietCool mobile app) overwrites the stored credential and breaks this integration.
+- **No link-layer encryption.** BLE communication is unencrypted — a firmware limitation that cannot be fixed in the integration.
+- **Single pairing credential.** The device stores one credential. Pairing another client overwrites it and breaks this integration.
 
-For home use on a private network, the risk profile is similar to any locally-controlled smart home device.
+For home use the risk profile is similar to any locally-controlled smart home device.
 
 ## How It Works
 
-QuietCool's ESP32-based BLE controllers advertise under names starting with `ATTICFAN`. All communication uses a single GATT characteristic with JSON commands over BLE:
+QuietCool's ESP32-based BLE controllers advertise under names starting with `ATTICFAN`. All communication uses a single GATT characteristic with JSON commands:
 
 ```
 Service:  000000ff-0000-1000-8000-00805f9b34fb
@@ -173,48 +217,47 @@ Char:     0000ff01-0000-1000-8000-00805f9b34fb
 Two protocol versions exist depending on firmware:
 
 **V1 (firmware < 3.9)** — string command names, full response keys:
-```
+```json
 → {"Api": "GetWorkState"}
-← {"Mode": "Timer", "Range": "HIGH", "Temp_Sample": 1071, "Humidity_Sample": 650, ...}
+← {"Mode": "TH", "Range": "HIGH", "Temp_Sample": 908, "Humidity_Sample": 23}
 ```
 
 **V2 (firmware ≥ 3.9)** — numeric command codes, single-character response keys, `QQ` prefix:
-```
+```json
 → {"A": 17}
-← QQ{"A": 17, "N": "ATTICFAN_XXXX", "M": "AFG SMT PRO-2.0", "S": "..."}
+← QQ{"A": 17, "N": "ATTICFAN_XXXX", "M": "...", "S": "..."}
 ```
 
-The integration auto-detects the protocol version on first connection. Temperature is `Temp_Sample / 10 = °F` (e.g. `1071` → `107.1 °F`).
+The integration auto-detects the protocol version on first connection.
+
+### Smart mode thresholds (V1)
+
+Thresholds are written with `SetTempHumidity`. All six fields are required per poll:
+
+```json
+→ {"Api": "SetTempHumidity", "SetTemp_H": 86, "SetTemp_M": 75, "SetTemp_L": 65,
+   "SetHum_H": 90, "SetHum_L": 255, "SetHum_Range": "LOW"}
+← {"Api": "SetTempHumidity", "Flag": "TRUE"}
+```
 
 ### Known Protocol Gaps
 
-The V2 numeric API code for `GetWorkState` has not yet been publicly confirmed. Until it is, **temperature and humidity sensors will be unavailable on firmware ≥ 3.9 devices**. Fan control (on/off, speed) still works because `SetMode` and `SetTime` appear to be accepted in V1 format on V2 firmware. See [Protocol Research](#protocol-research) for where to track this.
+The V2 numeric API code for `GetWorkState` has not yet been publicly confirmed. Until it is, **temperature and humidity sensors will be unavailable on firmware ≥ 3.9 devices**. Fan control and smart mode still work because `SetMode` and `SetTime` are accepted in V1 format on V2 firmware.
 
 ## Protocol Research
 
-The BLE protocol was reverse-engineered by the community. Key sources used in building this integration:
-
 | Source | Contribution |
 |---|---|
-| [emerose/quietcool](https://github.com/emerose/quietcool) | Original V1 protocol reverse-engineering: command names, response keys, `Temp_Sample / 10` formula, `SensorState` field |
-| [alex-spyksma/quietcool](https://github.com/alex-spyksma/quietcool/tree/issue/3-cannot-import-main) | Fork confirming `SensorState` in `GetWorkState`, additional commands (`GetVersion`, `GetRemainTime`, `GetParameter`) |
-| [u/secretoftheeast on Reddit](https://www.reddit.com/r/homeassistant/comments/1kyv0pn/quietcool_whole_house_fan_home_assistant/) | Discovered firmware 3.9+ V2 protocol: `QQ` prefix, `{"A": 17}` numeric codes, single-character response keys |
+| [emerose/quietcool](https://github.com/emerose/quietcool) | Original V1 reverse-engineering: command names, response keys, `Temp_Sample / 10` formula |
+| [alex-spyksma/quietcool](https://github.com/alex-spyksma/quietcool/tree/issue/3-cannot-import-main) | Additional commands: `GetVersion`, `GetRemainTime`, `GetParameter`, `SetTempHumidity` |
+| [u/secretoftheeast on Reddit](https://www.reddit.com/r/homeassistant/comments/1kyv0pn/quietcool_whole_house_fan_home_assistant/) | Discovered firmware 3.9+ V2 protocol: `QQ` prefix, numeric codes, single-character keys |
 | [HA Community thread](https://community.home-assistant.io/t/quietcool-integration/913242) | Community reports and device compatibility |
 
-### Where to Watch for Updates
-
-If you have firmware ≥ 3.9 and want to help unlock temperature/humidity sensors:
-
-- **[emerose/quietcool issues](https://github.com/emerose/quietcool/issues)** — the most active hub for protocol research; watch for PRs adding V2 GetWorkState support
-- **[Reddit thread (u/secretoftheeast)](https://www.reddit.com/r/homeassistant/comments/1kyv0pn/quietcool_whole_house_fan_home_assistant/)** — original V2 discovery post; u/secretoftheeast indicated a branch with further findings
-- **[HA Community thread](https://community.home-assistant.io/t/quietcool-integration/913242)** — user reports and firmware version notes
-- **[This repo's issues](https://github.com/rwarner/ha-quietcool-ble/issues)** — open an issue if you can BLE-sniff your device's `GetWorkState` response on firmware 3.9+
-
-The missing piece is the numeric API code for `GetWorkState` (and `SetMode`/`SetTime` if V1 format stops working on newer firmware). If you have a BLE sniffer (nRF Sniffer, Wireshark + HCI log, or the Android QuietCool app with BLE debugging) and firmware ≥ 3.9, capturing a `GetWorkState` exchange would unblock this.
+If you have firmware ≥ 3.9 and want to help unlock temperature/humidity sensors, capturing a BLE `GetWorkState` exchange with nRF Sniffer, Wireshark + HCI log, or Android BLE debugging would unblock it. Open an issue at [this repo](https://github.com/rwarner/ha-quietcool-ble/issues).
 
 ## Related Projects
 
 - [emerose/quietcool](https://github.com/emerose/quietcool) — Python BLE CLI tool; primary protocol reference
 - [alex-spyksma/quietcool](https://github.com/alex-spyksma/quietcool) — fork with additional command documentation
-- [awkaplan/quietcool-esphome](https://github.com/awkaplan/quietcool-esphome) — ESPHome firmware replacement (alternative approach that bypasses the stock BLE protocol entirely)
-- [stabbylambda/homeassistant-quietcool](https://github.com/stabbylambda/homeassistant-quietcool) — earlier HA integration attempt (cloud-based, not native BLE)
+- [awkaplan/quietcool-esphome](https://github.com/awkaplan/quietcool-esphome) — ESPHome firmware replacement (alternative approach, no stock BLE)
+- [stabbylambda/homeassistant-quietcool](https://github.com/stabbylambda/homeassistant-quietcool) — earlier HA integration attempt (cloud-based)

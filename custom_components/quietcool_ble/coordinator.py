@@ -14,6 +14,7 @@ crash the entire HA event loop on every BLE disconnect.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
 from collections.abc import Awaitable, Callable
 from typing import Any, TypeAlias
@@ -33,7 +34,7 @@ from homeassistant.core import CoreState, HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from . import api
-from .api import FanInfo, FanState
+from .api import FanInfo, FanParameters, FanState, FanVersion
 from .const import (
     KEEP_ALIVE_SECONDS,
     MAX_CONNECT_ATTEMPTS,
@@ -68,6 +69,8 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         self.phone_id = phone_id
         self.fan_info: FanInfo = fan_info
         self.fan_state: FanState | None = None
+        self.fan_version: FanVersion | None = None
+        self.fan_parameters: FanParameters | None = None
 
         logger.info(
             "QuietCool coordinator init: %s model=%r serial=%r protocol=%s",
@@ -83,6 +86,7 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         self._client: BleakClientWithServiceCache | None = None
         self._expected_disconnect = False
         self._idle_timer_handle: asyncio.TimerHandle | None = None
+        self._poll_timer_handle: asyncio.TimerHandle | None = None
         self._poll_task: asyncio.Task[Any] | None = None
         self._consecutive_failures = 0
 
@@ -97,18 +101,31 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         seconds_since_last_poll: float | None,
     ) -> bool:
         """Return True when it's time to connect and read device state."""
-        return (
-            self.hass.state == CoreState.running
-            and (
-                seconds_since_last_poll is None
-                or seconds_since_last_poll > self._poll_interval()
-            )
-            and bool(
-                bluetooth.async_ble_device_from_address(
-                    self.hass, service_info.device.address, connectable=True
-                )
+        # Allow polls during startup; only block during shutdown to avoid
+        # connecting to a device while HA is tearing down.
+        ha_ok = self.hass.state not in (CoreState.stopping, CoreState.stopped)
+        interval_ok = (
+            seconds_since_last_poll is None
+            or seconds_since_last_poll > self._poll_interval()
+        )
+        connectable = bool(
+            bluetooth.async_ble_device_from_address(
+                self.hass, service_info.device.address, connectable=True
             )
         )
+        result = ha_ok and interval_ok and connectable
+        _LOGGER.debug(
+            "QuietCool %s _needs_poll: ha_ok=%s interval_ok=%s "
+            "(since_last=%.0fs interval=%.0fs) connectable=%s → %s",
+            self.address,
+            ha_ok,
+            interval_ok,
+            seconds_since_last_poll if seconds_since_last_poll is not None else -1,
+            self._poll_interval(),
+            connectable,
+            result,
+        )
+        return result
 
     def _poll_interval(self) -> float:
         """Return poll interval with exponential backoff after consecutive failures."""
@@ -117,8 +134,9 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         backoff = POLL_INTERVAL_SECONDS * (2**self._consecutive_failures)
         return min(backoff, 300.0)  # cap at 5 minutes
 
-    async def _async_poll(self, service_info: BluetoothServiceInfoBleak) -> None:
+    async def _async_poll(self, service_info: BluetoothServiceInfoBleak | None = None) -> None:
         """Perform one poll cycle: connect, login, GetWorkState, disconnect (or keep-alive)."""
+        _LOGGER.debug("QuietCool %s: _async_poll invoked", self.address)
         self._poll_task = asyncio.current_task()
         try:
             await self.async_execute(self._poll_operation)
@@ -129,6 +147,10 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
                     self._consecutive_failures,
                 )
             self._consecutive_failures = 0
+            # Notify entity listeners directly. ActiveBluetoothDataUpdateCoordinator
+            # only fires _listeners on BLE advertisement events, not after polls.
+            for update_callback, _ in list(self._listeners.values()):
+                update_callback()
         except UpdateFailed:
             self._consecutive_failures += 1
             _LOGGER.debug(
@@ -137,12 +159,61 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
                 self._consecutive_failures,
                 self._poll_interval(),
             )
+            # _handle_disconnect may have returned early (expected_disconnect=True
+            # after a deliberate disconnect in _ensure_connected error paths), so
+            # ensure a retry is always scheduled regardless of how the failure occurred.
+            self._schedule_poll_timer()
             raise
         finally:
             self._poll_task = None
 
     async def _poll_operation(self, client: BleakClient) -> None:
-        self.fan_state = await api.get_work_state(client, protocol=self.fan_info.protocol)
+        # Fetch firmware version once — it never changes during a device's lifetime
+        if self.fan_version is None:
+            try:
+                self.fan_version = await api.get_version_info(client)
+                _LOGGER.info(
+                    "QuietCool %s firmware=%s hw=%s protect_temp=%d°F",
+                    self.address,
+                    self.fan_version.firmware,
+                    self.fan_version.hw_version,
+                    self.fan_version.protect_temp,
+                )
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug("QuietCool %s GetVersion failed: %s", self.address, err)
+
+        # Fetch parameters every poll — user may change them from the app
+        try:
+            self.fan_parameters = await api.get_parameters(client)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("QuietCool %s GetParameter failed: %s", self.address, err)
+
+        # Fetch remaining timer countdown
+        remain_seconds = 0
+        try:
+            remain = await api.get_remain_time(client)
+            remain_seconds = (
+                int(remain.get("RemainHour", 0)) * 3600
+                + int(remain.get("RemainMinute", 0)) * 60
+                + int(remain.get("RemainSecond", 0))
+            )
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("QuietCool %s GetRemainTime failed: %s", self.address, err)
+
+        # Main work state — always last so it's freshest
+        state = await api.get_work_state(client, protocol=self.fan_info.protocol)
+        self.fan_state = dataclasses.replace(state, remain_seconds=remain_seconds)
+
+        _LOGGER.debug(
+            "QuietCool %s: state mode=%s range=%s temp=%s hum=%s remain=%ds listeners=%d",
+            self.address,
+            self.fan_state.mode,
+            self.fan_state.range,
+            self.fan_state.temp_fahrenheit,
+            self.fan_state.humidity_percent,
+            remain_seconds,
+            len(self._listeners),
+        )
 
     # ------------------------------------------------------------------
     # Command routing — single entry point for ALL BLE operations
@@ -196,6 +267,7 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
                 )
 
             self._expected_disconnect = False
+            _LOGGER.debug("QuietCool %s: opening BLE connection", self.address)
             try:
                 client = await establish_connection(
                     BleakClientWithServiceCache,
@@ -209,14 +281,20 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
                     f"Could not connect to QuietCool {self.address}: {err}"
                 ) from err
 
+            _LOGGER.debug("QuietCool %s: BLE link up, authenticating", self.address)
             # Authenticate immediately after connecting
             try:
                 authenticated = await api.login(client, self.phone_id)
             except Exception as err:
+                self._expected_disconnect = True
                 await client.disconnect()
                 raise UpdateFailed(f"BLE login error: {err}") from err
 
+            _LOGGER.debug(
+                "QuietCool %s: login result=%s", self.address, authenticated
+            )
             if not authenticated:
+                self._expected_disconnect = True
                 await client.disconnect()
                 raise UpdateFailed(
                     "QuietCool login rejected — PhoneID mismatch or device was "
@@ -225,11 +303,15 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
 
             self._client = client
             self._reset_idle_timer()
-            _LOGGER.debug("Connected to QuietCool %s", self.address)
+            _LOGGER.debug("QuietCool %s: authenticated, ready to poll", self.address)
             return client
 
     def _handle_disconnect(self, client: BleakClient) -> None:
-        """Handle unexpected BLE disconnect.
+        """Handle device-initiated BLE disconnect.
+
+        The QuietCool controller drops the connection after ~25 seconds of
+        inactivity. This is normal — we schedule a re-poll so entities stay
+        fresh without needing a new BLE advertisement (BT proxies deduplicate).
 
         IMPORTANT: Does NOT cancel asyncio.all_tasks(). The upstream
         emerose/quietcool library does this, which would crash HA. We cancel
@@ -237,13 +319,39 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         """
         if self._expected_disconnect:
             return
-        _LOGGER.warning("QuietCool %s: unexpected BLE disconnect", self.address)
+        if self._client is None:
+            return  # already handled (Bleak sometimes fires this callback twice)
+        _LOGGER.debug(
+            "QuietCool %s: BLE connection closed by device (idle timeout or link loss)",
+            self.address,
+        )
         self._client = None
         if self._idle_timer_handle:
             self._idle_timer_handle.cancel()
             self._idle_timer_handle = None
         if self._poll_task and not self._poll_task.done():
             self._poll_task.cancel()
+        # Schedule next poll — device returns to advertising mode after disconnect
+        self._schedule_poll_timer()
+
+    def _schedule_poll_timer(self) -> None:
+        """Schedule a timer-driven poll for after device disconnects.
+
+        BT proxies deduplicate advertisements, so we cannot rely on a BLE
+        advertisement event to trigger _needs_poll after the first startup poll.
+        Instead, we self-schedule: poll → device idles and disconnects → timer
+        fires → reconnect → poll → repeat.
+        """
+        if self._poll_timer_handle is not None:
+            self._poll_timer_handle.cancel()
+        interval = self._poll_interval()
+        _LOGGER.debug(
+            "QuietCool %s: scheduling next poll in %.0fs", self.address, interval
+        )
+        self._poll_timer_handle = self.hass.loop.call_later(
+            interval,
+            lambda: self.hass.async_create_task(self._async_poll()),
+        )
 
     def _reset_idle_timer(self) -> None:
         """Reset the idle-disconnect timer to KEEP_ALIVE_SECONDS from now."""
@@ -279,5 +387,8 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
                 pass
         if self._idle_timer_handle:
             self._idle_timer_handle.cancel()
+        if self._poll_timer_handle is not None:
+            self._poll_timer_handle.cancel()
+            self._poll_timer_handle = None
         await self._async_idle_disconnect()
         await super().async_stop()

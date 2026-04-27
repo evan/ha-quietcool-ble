@@ -59,16 +59,19 @@ class QuietCoolFanEntity(CoordinatorEntity[QuietCoolBLECoordinator], FanEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
+        version = self.coordinator.fan_version
         return DeviceInfo(
             identifiers={(DOMAIN, self.coordinator.address)},
             name=self.coordinator.fan_info.name,
             manufacturer="QuietCool",
             model=self.coordinator.fan_info.model or None,
+            sw_version=version.firmware if version else None,
+            hw_version=version.hw_version if version else None,
         )
 
     @property
     def available(self) -> bool:
-        return super().available and self.coordinator.fan_state is not None
+        return self.coordinator.fan_state is not None
 
     @property
     def is_on(self) -> bool | None:
