@@ -1,0 +1,31 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "bluetooth_confirm": {
+        "title": "Set up QuietCool Fan",
+        "description": "Found **{name}** ({address}). Click Submit to begin pairing."
+      },
+      "pair": {
+        "title": "Pair with {name}",
+        "description": "**Press the physical Pair button** on your QuietCool fan controller, then click Submit within a few seconds.\n\nThe Pair button is located on the fan's wall control unit or the controller mounted near the fan."
+      },
+      "user": {
+        "title": "Set up QuietCool BLE",
+        "data": {
+          "address": "Fan"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to the fan over Bluetooth. Ensure the fan is powered on and within range.",
+      "pair_failed": "Pairing failed. Press the Pair button on the fan controller first, then try again."
+    },
+    "abort": {
+      "already_configured": "This fan is already configured.",
+      "no_devices_found": "No QuietCool fans were discovered nearby. Ensure the fan is powered on and Bluetooth is enabled.",
+      "device_not_found": "The selected device is no longer available.",
+      "reauth_successful": "Re-authentication successful."
+    }
+  }
+}

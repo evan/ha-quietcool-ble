@@ -1,0 +1,18 @@
+{
+  "domain": "quietcool_ble",
+  "name": "QuietCool BLE",
+  "config_flow": true,
+  "documentation": "https://github.com/rwarner/hass-integration-quietcool",
+  "issue_tracker": "https://github.com/rwarner/hass-integration-quietcool/issues",
+  "dependencies": ["bluetooth_adapters"],
+  "requirements": ["bleak-retry-connector>=3.0.0", "bluetooth-data-tools>=1.0.0"],
+  "bluetooth": [
+    {
+      "local_name": "ATTICFAN*",
+      "connectable": true
+    }
+  ],
+  "codeowners": ["@rwarner"],
+  "iot_class": "local_polling",
+  "version": "0.1.0"
+}
