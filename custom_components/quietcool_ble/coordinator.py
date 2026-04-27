@@ -69,6 +69,14 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         self.fan_info: FanInfo = fan_info
         self.fan_state: FanState | None = None
 
+        logger.info(
+            "QuietCool coordinator init: %s model=%r serial=%r protocol=%s",
+            address,
+            fan_info.model,
+            fan_info.serial,
+            fan_info.protocol,
+        )
+
         # Dual-lock pattern (led_ble reference architecture)
         self._connect_lock = asyncio.Lock()
         self._operation_lock = asyncio.Lock()
@@ -114,9 +122,21 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         self._poll_task = asyncio.current_task()
         try:
             await self.async_execute(self._poll_operation)
+            if self._consecutive_failures > 0:
+                _LOGGER.info(
+                    "QuietCool %s: poll recovered after %d failure(s)",
+                    self.address,
+                    self._consecutive_failures,
+                )
             self._consecutive_failures = 0
         except UpdateFailed:
             self._consecutive_failures += 1
+            _LOGGER.debug(
+                "QuietCool %s: poll failure #%d, next interval %.0fs",
+                self.address,
+                self._consecutive_failures,
+                self._poll_interval(),
+            )
             raise
         finally:
             self._poll_task = None

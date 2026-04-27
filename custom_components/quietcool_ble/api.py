@@ -281,15 +281,15 @@ async def set_mode_timer(
 # Transport layer
 # ---------------------------------------------------------------------------
 
-def _strip_qq_prefix(data: bytes) -> bytes:
+def _strip_qq_prefix(data: bytes) -> tuple[bytes, bool]:
     """Strip the 'QQ' prefix added by firmware 3.9+ before JSON content.
 
-    Firmware 3.9+ prepends b'QQ' to all notify responses. This must be
-    removed before JSON parsing. The prefix is not part of the JSON document.
+    Returns (stripped_data, had_prefix). The had_prefix flag lets callers
+    log when the prefix was detected without re-examining the bytes.
     """
     if data.startswith(b"QQ"):
-        return data[2:]
-    return data
+        return data[2:], True
+    return data, False
 
 
 async def _send_command(client: BleakClient, payload: dict) -> dict:
@@ -300,32 +300,58 @@ async def _send_command(client: BleakClient, payload: dict) -> dict:
 
     Handles the firmware 3.9+ "QQ" prefix by stripping it before JSON parsing.
     """
+    cmd_label = payload.get("Api") or f"A={payload.get('A')}"
     response_queue: asyncio.Queue[dict] = asyncio.Queue(maxsize=4)
     recv_buffer = bytearray()
+    _qq_seen = False
 
     def handle_notify(_: object, data: bytearray) -> None:
-        nonlocal recv_buffer
+        nonlocal recv_buffer, _qq_seen
+        _LOGGER.debug(
+            "QuietCool BLE notify chunk (%d bytes): %s",
+            len(data),
+            data.hex(),
+        )
         recv_buffer += data
         if len(recv_buffer) > MAX_RECV_BUFFER:
             _LOGGER.warning(
-                "QuietCool BLE notify buffer overflow (%d bytes); resetting",
+                "QuietCool BLE notify buffer overflow (%d bytes); resetting. "
+                "Raw buffer: %s",
                 len(recv_buffer),
+                bytes(recv_buffer).hex(),
             )
             recv_buffer = bytearray()
             return
-        # Strip firmware 3.9+ "QQ" prefix before attempting JSON parse
-        candidate = _strip_qq_prefix(bytes(recv_buffer))
+        candidate, had_qq = _strip_qq_prefix(bytes(recv_buffer))
+        if had_qq and not _qq_seen:
+            _qq_seen = True
+            _LOGGER.debug(
+                "QuietCool BLE: firmware 3.9+ QQ prefix detected on %s response",
+                cmd_label,
+            )
         try:
             msg = json.loads(candidate.decode("utf-8"))
+            _LOGGER.debug(
+                "QuietCool BLE %s ← %s (buffer %d bytes, qq=%s)",
+                cmd_label,
+                msg,
+                len(recv_buffer),
+                _qq_seen,
+            )
             recv_buffer = bytearray()
             response_queue.put_nowait(msg)
         except (json.JSONDecodeError, UnicodeDecodeError):
-            pass  # incomplete chunk — keep accumulating
+            _LOGGER.debug(
+                "QuietCool BLE %s: incomplete chunk, buffering (%d bytes so far)",
+                cmd_label,
+                len(recv_buffer),
+            )
 
     # Register notify BEFORE writing
     await client.start_notify(CHAR_UUID, handle_notify)
     try:
         raw = json.dumps(payload).encode("utf-8")
+        _LOGGER.debug("QuietCool BLE %s → %s", cmd_label, raw.decode())
         char = client.services.get_characteristic(CHAR_UUID)
         chunk_size = char.max_write_without_response_size
         for i in range(0, len(raw), chunk_size):
@@ -333,11 +359,15 @@ async def _send_command(client: BleakClient, payload: dict) -> dict:
                 CHAR_UUID, raw[i : i + chunk_size], response=True
             )
         resp = await asyncio.wait_for(response_queue.get(), timeout=COMMAND_TIMEOUT)
-        cmd_label = payload.get("Api") or f"A={payload.get('A')}"
-        _LOGGER.debug("QuietCool BLE %s → %s", cmd_label, resp)
         return resp
     except asyncio.TimeoutError as err:
-        cmd_label = payload.get("Api") or f"A={payload.get('A')}"
+        _LOGGER.warning(
+            "QuietCool BLE %s: no response within %ss. "
+            "Raw buffer at timeout: %s",
+            cmd_label,
+            COMMAND_TIMEOUT,
+            bytes(recv_buffer).hex() if recv_buffer else "<empty>",
+        )
         raise TimeoutError(
             f"No BLE response to '{cmd_label}' within {COMMAND_TIMEOUT}s"
         ) from err
