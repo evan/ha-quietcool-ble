@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, TypeAlias
 
 from bleak import BleakClient
 from bleak_retry_connector import BleakClientWithServiceCache, establish_connection
@@ -42,7 +42,7 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-type _BleOperation = Callable[[BleakClient], Awaitable[None]]
+_BleOperation: TypeAlias = Callable[[BleakClient], Awaitable[None]]
 
 
 class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
@@ -122,7 +122,7 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
             self._poll_task = None
 
     async def _poll_operation(self, client: BleakClient) -> None:
-        self.fan_state = await api.get_work_state(client)
+        self.fan_state = await api.get_work_state(client, protocol=self.fan_info.protocol)
 
     # ------------------------------------------------------------------
     # Command routing — single entry point for ALL BLE operations

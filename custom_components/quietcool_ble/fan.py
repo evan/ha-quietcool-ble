@@ -94,8 +94,9 @@ class QuietCoolFanEntity(CoordinatorEntity[QuietCoolBLECoordinator], FanEntity):
         **kwargs: Any,
     ) -> None:
         speed = _PRESET_TO_BLE.get(preset_mode or PRESET_LOW, FanSpeed.LOW)
+        protocol = self.coordinator.fan_info.protocol
         await self.coordinator.async_execute(
-            lambda client: api.set_mode_timer(client, speed)
+            lambda client: api.set_mode_timer(client, speed, protocol=protocol)
         )
         # Optimistic update — show new state immediately without waiting for next poll
         if self.coordinator.fan_state is not None:
@@ -105,8 +106,9 @@ class QuietCoolFanEntity(CoordinatorEntity[QuietCoolBLECoordinator], FanEntity):
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
+        protocol = self.coordinator.fan_info.protocol
         await self.coordinator.async_execute(
-            lambda client: api.set_mode_idle(client)
+            lambda client: api.set_mode_idle(client, protocol=protocol)
         )
         if self.coordinator.fan_state is not None:
             self.coordinator.fan_state = dataclasses.replace(
@@ -124,7 +126,10 @@ class QuietCoolFanEntity(CoordinatorEntity[QuietCoolBLECoordinator], FanEntity):
     def extra_state_attributes(self) -> dict[str, Any] | None:
         if self.coordinator.fan_state is None:
             return None
-        return {
+        attrs: dict[str, Any] = {
             "ble_mode": self.coordinator.fan_state.mode,
             "ble_range": self.coordinator.fan_state.range,
         }
+        if self.coordinator.fan_state.sensor_state is not None:
+            attrs["sensor_state"] = self.coordinator.fan_state.sensor_state
+        return attrs

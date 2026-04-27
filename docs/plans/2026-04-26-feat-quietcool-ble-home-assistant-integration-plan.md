@@ -1,7 +1,7 @@
 ---
 title: QuietCool BLE Native Home Assistant Integration
 type: feat
-status: active
+status: completed
 date: 2026-04-26
 deepened: 2026-04-26
 ---

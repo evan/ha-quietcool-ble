@@ -19,12 +19,13 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 
 from . import api
-from .api import FanInfo
+from .api import FanInfo, ProtocolVersion
 from .const import (
     CONF_FAN_MODEL,
     CONF_FAN_NAME,
     CONF_FAN_SERIAL,
     CONF_PHONE_ID,
+    CONF_PROTOCOL,
     DOMAIN,
     MAX_CONNECT_ATTEMPTS,
     PLATFORMS,
@@ -44,6 +45,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         name=entry.data.get(CONF_FAN_NAME) or entry.title,
         model=entry.data.get(CONF_FAN_MODEL, ""),
         serial=entry.data.get(CONF_FAN_SERIAL, ""),
+        protocol=entry.data.get(CONF_PROTOCOL, ProtocolVersion.V1),
     )
 
     # Verify device is reachable before completing setup

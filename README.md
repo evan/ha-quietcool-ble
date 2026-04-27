@@ -126,6 +126,25 @@ automation:
 **QuietCool app stopped working after setup:**
 The fan stores exactly one pairing credential. Pairing with the QuietCool Android app will break this integration until you re-pair (Settings → Integrations → QuietCool BLE → ⋮ → Re-authenticate).
 
+**Enabling debug logs:**
+
+Add this to your `configuration.yaml` to capture full BLE protocol traffic:
+
+```yaml
+logger:
+  default: warning
+  logs:
+    custom_components.quietcool_ble: debug
+```
+
+Restart HA, then reproduce the problem. Logs appear in **Settings → System → Logs**. Each BLE command and its response are logged at `DEBUG` level, e.g.:
+
+```
+QuietCool BLE GetFanInfo → {'Name': 'ATTICFAN_XXXX', 'Model': 'AFG SMT PRO-2.0', ...}
+```
+
+If filing a bug report, please include the debug log output from the connection attempt.
+
 ## Security
 
 This integration communicates directly with your fan over Bluetooth Low Energy. Be aware of the following:
@@ -141,15 +160,55 @@ For home use on a private network, the risk profile is similar to any locally-co
 QuietCool's ESP32-based BLE controllers advertise under names starting with `ATTICFAN`. All communication uses a single GATT characteristic with JSON commands over BLE:
 
 ```
-Service:   000000ff-0000-1000-8000-00805f9b34fb
-Char:      0000ff01-0000-1000-8000-00805f9b34fb
-Protocol:  {"Api": "GetWorkState"} → {"Mode": "Timer", "Range": "HIGH", "Temp_Sample": 1071, ...}
+Service:  000000ff-0000-1000-8000-00805f9b34fb
+Char:     0000ff01-0000-1000-8000-00805f9b34fb
 ```
 
-The BLE protocol was reverse-engineered by [emerose/quietcool](https://github.com/emerose/quietcool). This integration builds on that protocol work with a proper HA config flow, coordinator, and entity architecture.
+Two protocol versions exist depending on firmware:
+
+**V1 (firmware < 3.9)** — string command names, full response keys:
+```
+→ {"Api": "GetWorkState"}
+← {"Mode": "Timer", "Range": "HIGH", "Temp_Sample": 1071, "Humidity_Sample": 650, ...}
+```
+
+**V2 (firmware ≥ 3.9)** — numeric command codes, single-character response keys, `QQ` prefix:
+```
+→ {"A": 17}
+← QQ{"A": 17, "N": "ATTICFAN_XXXX", "M": "AFG SMT PRO-2.0", "S": "..."}
+```
+
+The integration auto-detects the protocol version on first connection. Temperature is `Temp_Sample / 10 = °F` (e.g. `1071` → `107.1 °F`).
+
+### Known Protocol Gaps
+
+The V2 numeric API code for `GetWorkState` has not yet been publicly confirmed. Until it is, **temperature and humidity sensors will be unavailable on firmware ≥ 3.9 devices**. Fan control (on/off, speed) still works because `SetMode` and `SetTime` appear to be accepted in V1 format on V2 firmware. See [Protocol Research](#protocol-research) for where to track this.
+
+## Protocol Research
+
+The BLE protocol was reverse-engineered by the community. Key sources used in building this integration:
+
+| Source | Contribution |
+|---|---|
+| [emerose/quietcool](https://github.com/emerose/quietcool) | Original V1 protocol reverse-engineering: command names, response keys, `Temp_Sample / 10` formula, `SensorState` field |
+| [alex-spyksma/quietcool](https://github.com/alex-spyksma/quietcool/tree/issue/3-cannot-import-main) | Fork confirming `SensorState` in `GetWorkState`, additional commands (`GetVersion`, `GetRemainTime`, `GetParameter`) |
+| [u/secretoftheeast on Reddit](https://www.reddit.com/r/homeassistant/comments/1kyv0pn/quietcool_whole_house_fan_home_assistant/) | Discovered firmware 3.9+ V2 protocol: `QQ` prefix, `{"A": 17}` numeric codes, single-character response keys |
+| [HA Community thread](https://community.home-assistant.io/t/quietcool-integration/913242) | Community reports and device compatibility |
+
+### Where to Watch for Updates
+
+If you have firmware ≥ 3.9 and want to help unlock temperature/humidity sensors:
+
+- **[emerose/quietcool issues](https://github.com/emerose/quietcool/issues)** — the most active hub for protocol research; watch for PRs adding V2 GetWorkState support
+- **[Reddit thread (u/secretoftheeast)](https://www.reddit.com/r/homeassistant/comments/1kyv0pn/quietcool_whole_house_fan_home_assistant/)** — original V2 discovery post; u/secretoftheeast indicated a branch with further findings
+- **[HA Community thread](https://community.home-assistant.io/t/quietcool-integration/913242)** — user reports and firmware version notes
+- **[This repo's issues](https://github.com/rwarner/hass-integration-quietcool/issues)** — open an issue if you can BLE-sniff your device's `GetWorkState` response on firmware 3.9+
+
+The missing piece is the numeric API code for `GetWorkState` (and `SetMode`/`SetTime` if V1 format stops working on newer firmware). If you have a BLE sniffer (nRF Sniffer, Wireshark + HCI log, or the Android QuietCool app with BLE debugging) and firmware ≥ 3.9, capturing a `GetWorkState` exchange would unblock this.
 
 ## Related Projects
 
-- [emerose/quietcool](https://github.com/emerose/quietcool) — Python BLE CLI tool (protocol reference)
-- [awkaplan/quietcool-esphome](https://github.com/awkaplan/quietcool-esphome) — ESPHome firmware replacement (alternative approach)
-- [HA Community: QuietCool Integration](https://community.home-assistant.io/t/quietcool-integration/913242)
+- [emerose/quietcool](https://github.com/emerose/quietcool) — Python BLE CLI tool; primary protocol reference
+- [alex-spyksma/quietcool](https://github.com/alex-spyksma/quietcool) — fork with additional command documentation
+- [awkaplan/quietcool-esphome](https://github.com/awkaplan/quietcool-esphome) — ESPHome firmware replacement (alternative approach that bypasses the stock BLE protocol entirely)
+- [stabbylambda/homeassistant-quietcool](https://github.com/stabbylambda/homeassistant-quietcool) — earlier HA integration attempt (cloud-based, not native BLE)

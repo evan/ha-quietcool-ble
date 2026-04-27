@@ -23,12 +23,14 @@ from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResu
 from homeassistant.const import CONF_ADDRESS
 
 from . import api
+from .api import ProtocolVersion
 from .const import (
     BLE_NAME_PREFIX,
     CONF_FAN_MODEL,
     CONF_FAN_NAME,
     CONF_FAN_SERIAL,
     CONF_PHONE_ID,
+    CONF_PROTOCOL,
     DOMAIN,
     MAX_CONNECT_ATTEMPTS,
 )
@@ -174,6 +176,7 @@ class QuietCoolBLEConfigFlow(ConfigFlow, domain=DOMAIN):
                 CONF_FAN_NAME: fan_info.name if fan_info else self._discovery_info.name,
                 CONF_FAN_MODEL: fan_info.model if fan_info else "",
                 CONF_FAN_SERIAL: fan_info.serial if fan_info else "",
+                CONF_PROTOCOL: fan_info.protocol if fan_info else ProtocolVersion.V1,
             },
         )
 
