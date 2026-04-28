@@ -390,6 +390,7 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
                     self.address,
                     KEEP_ALIVE_SECONDS,
                 )
+                self._schedule_poll_timer()
 
     async def async_stop(self) -> None:
         """Cancel in-flight poll and close any open BLE connection."""
