@@ -85,6 +85,7 @@ The Pair button is on the wall control unit or the small controller box mounted 
 |---|---|---|---|
 | Fan | `fan` | — | On/off, `Low` / `High` speed preset |
 | Mode | `select` | — | `Idle` / `Timer` / `TH` (smart mode) |
+| Fan Speed | `sensor` | — | Physical speed: `Off` / `Low` / `High` |
 | Temperature | `sensor` | °F | Attic temp: `Temp_Sample / 10` |
 | Humidity | `sensor` | % | Attic humidity: direct integer |
 | Timer Remaining | `sensor` | s | Countdown when in Timer mode |
@@ -97,6 +98,8 @@ The Pair button is on the wall control unit or the small controller box mounted 
 ## Smart Mode (TH)
 
 TH mode lets the fan controller automatically turn the fan on and off based on attic temperature and humidity. The thresholds are stored on the device and persist across power cycles and HA restarts.
+
+The **Fan Speed** sensor shows whether the blades are actually spinning (`Off` / `Low` / `High`). In TH mode the fan entity shows as "on" (control mode is active), but Fan Speed will read `Off` whenever the current conditions haven't triggered it yet.
 
 Select **TH** from the Mode dropdown to activate it. Adjust the threshold number entities to match your comfort targets — changes take effect immediately without restarting the fan.
 
@@ -256,6 +259,9 @@ The V2 numeric API code for `GetWorkState` has not yet been publicly confirmed. 
 If you have firmware ≥ 3.9 and want to help unlock temperature/humidity sensors, capturing a BLE `GetWorkState` exchange with nRF Sniffer, Wireshark + HCI log, or Android BLE debugging would unblock it. Open an issue at [this repo](https://github.com/rwarner/ha-quietcool-ble/issues).
 
 ## Changelog
+
+### v0.2.3
+- Add "Fan Speed" sensor (`Off` / `Low` / `High`) showing physical running state, independent of control mode — useful in TH mode where the fan cycles automatically
 
 ### v0.2.2
 - Fix: polling could halt permanently if the device held the BLE connection open long enough for the coordinator's 60s idle-disconnect timer to fire first. The idle disconnect was marked "expected" so no follow-up poll was ever scheduled, silencing all entity updates until HA restarted.

@@ -28,6 +28,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .api import FanSpeed
 from .const import DOMAIN
 from .coordinator import QuietCoolBLECoordinator
 
@@ -40,6 +41,7 @@ async def async_setup_entry(
     coordinator: QuietCoolBLECoordinator = hass.data[DOMAIN][entry.entry_id]
     async_add_entities(
         [
+            QuietCoolFanSpeedSensor(coordinator),
             QuietCoolTemperatureSensor(coordinator),
             QuietCoolHumiditySensor(coordinator),
             QuietCoolRemainingTimerSensor(coordinator),
@@ -68,6 +70,37 @@ class _QuietCoolSensorBase(CoordinatorEntity[QuietCoolBLECoordinator], SensorEnt
             sw_version=version.firmware if version else None,
             hw_version=version.hw_version if version else None,
         )
+
+
+class QuietCoolFanSpeedSensor(_QuietCoolSensorBase):
+    """Physical fan speed: Off / Low / High.
+
+    Distinct from the Mode select (Idle / Timer / TH). In TH mode the
+    controller automatically cycles the fan on and off as thresholds are
+    crossed; this sensor reflects what the blades are actually doing now.
+    """
+
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_name = "Fan Speed"
+    _attr_options = ["Off", "Low", "High"]
+
+    def __init__(self, coordinator: QuietCoolBLECoordinator) -> None:
+        super().__init__(coordinator, "fan_speed")
+
+    @property
+    def available(self) -> bool:
+        return self.coordinator.fan_state is not None
+
+    @property
+    def native_value(self) -> str | None:
+        if self.coordinator.fan_state is None:
+            return None
+        speed = self.coordinator.fan_state.range
+        if speed == FanSpeed.HIGH:
+            return "High"
+        if speed == FanSpeed.LOW:
+            return "Low"
+        return "Off"
 
 
 class QuietCoolTemperatureSensor(_QuietCoolSensorBase):
