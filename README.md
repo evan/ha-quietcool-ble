@@ -255,6 +255,21 @@ The V2 numeric API code for `GetWorkState` has not yet been publicly confirmed. 
 
 If you have firmware ≥ 3.9 and want to help unlock temperature/humidity sensors, capturing a BLE `GetWorkState` exchange with nRF Sniffer, Wireshark + HCI log, or Android BLE debugging would unblock it. Open an issue at [this repo](https://github.com/rwarner/ha-quietcool-ble/issues).
 
+## Changelog
+
+### v0.2.2
+- Fix: polling could halt permanently if the device held the BLE connection open long enough for the coordinator's 60s idle-disconnect timer to fire first. The idle disconnect was marked "expected" so no follow-up poll was ever scheduled, silencing all entity updates until HA restarted.
+
+### v0.2.1
+- Fix: poll halt on unexpected errors; stuck timer in TH mode; raised minimum HA version
+
+### v0.2.0
+- Full entity suite: fan control, smart mode (TH), temperature, humidity, timer, threshold configuration
+- Hardware-confirmed BLE protocol on AFG SMT PRO-2.0
+
+### v0.1.0
+- Initial release
+
 ## Related Projects
 
 - [emerose/quietcool](https://github.com/emerose/quietcool) — Python BLE CLI tool; primary protocol reference
