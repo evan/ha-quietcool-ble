@@ -159,11 +159,21 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
                 self._consecutive_failures,
                 self._poll_interval(),
             )
-            # _handle_disconnect may have returned early (expected_disconnect=True
-            # after a deliberate disconnect in _ensure_connected error paths), so
-            # ensure a retry is always scheduled regardless of how the failure occurred.
             self._schedule_poll_timer()
             raise
+        except Exception as err:  # noqa: BLE001
+            # Unexpected exception — not wrapped by async_execute (e.g. an error
+            # in the listener callback loop). Still schedule a retry so polling
+            # never stops permanently. asyncio.CancelledError is BaseException and
+            # won't be caught here, which is correct — no retry on task cancellation.
+            self._consecutive_failures += 1
+            _LOGGER.exception(
+                "QuietCool %s: unexpected poll error (failure #%d): %s",
+                self.address,
+                self._consecutive_failures,
+                err,
+            )
+            self._schedule_poll_timer()
         finally:
             self._poll_task = None
 
@@ -188,20 +198,24 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         except Exception as err:  # noqa: BLE001
             _LOGGER.debug("QuietCool %s GetParameter failed: %s", self.address, err)
 
-        # Fetch remaining timer countdown
-        remain_seconds = 0
-        try:
-            remain = await api.get_remain_time(client)
-            remain_seconds = (
-                int(remain.get("RemainHour", 0)) * 3600
-                + int(remain.get("RemainMinute", 0)) * 60
-                + int(remain.get("RemainSecond", 0))
-            )
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.debug("QuietCool %s GetRemainTime failed: %s", self.address, err)
-
-        # Main work state — always last so it's freshest
+        # Work state — get this before RemainTime so we know the current mode
         state = await api.get_work_state(client, protocol=self.fan_info.protocol)
+
+        # Only fetch timer countdown in Timer mode. The device returns its last
+        # stored timer duration (not a live countdown) in TH and Idle modes, which
+        # would show a misleading non-zero value in the Timer Remaining sensor.
+        remain_seconds = 0
+        if state.mode == api.FanMode.TIMER:
+            try:
+                remain = await api.get_remain_time(client)
+                remain_seconds = (
+                    int(remain.get("RemainHour", 0)) * 3600
+                    + int(remain.get("RemainMinute", 0)) * 60
+                    + int(remain.get("RemainSecond", 0))
+                )
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug("QuietCool %s GetRemainTime failed: %s", self.address, err)
+
         self.fan_state = dataclasses.replace(state, remain_seconds=remain_seconds)
 
         _LOGGER.debug(

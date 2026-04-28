@@ -46,7 +46,7 @@ All supported controllers advertise over BLE with a name beginning with `ATTICFA
 
 ## Prerequisites
 
-- Home Assistant 2024.8 or newer
+- Home Assistant 2023.7 or newer
 - Bluetooth adapter on your HA host, or an ESPHome BT Proxy on the same network
 - QuietCool fan powered on and within Bluetooth range during initial setup
 
