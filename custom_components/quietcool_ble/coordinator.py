@@ -160,7 +160,6 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
                 self._poll_interval(),
             )
             self._schedule_poll_timer()
-            raise
         except Exception as err:  # noqa: BLE001
             # Unexpected exception — not wrapped by async_execute (e.g. an error
             # in the listener callback loop). Still schedule a retry so polling
