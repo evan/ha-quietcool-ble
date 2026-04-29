@@ -262,6 +262,7 @@ If you have firmware ≥ 3.9 and want to help unlock temperature/humidity sensor
 
 ### v0.2.3
 - Add "Fan Speed" sensor (`Off` / `Low` / `High`) showing physical running state, independent of control mode — useful in TH mode where the fan cycles automatically
+- Fix: transient BLE GATT errors (e.g. ESPHome proxy error 133) no longer appear as ERROR in the HA log — already handled internally with backoff retry
 
 ### v0.2.2
 - Fix: polling could halt permanently if the device held the BLE connection open long enough for the coordinator's 60s idle-disconnect timer to fire first. The idle disconnect was marked "expected" so no follow-up poll was ever scheduled, silencing all entity updates until HA restarted.
