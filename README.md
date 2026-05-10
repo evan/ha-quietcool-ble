@@ -260,6 +260,10 @@ If you have firmware ≥ 3.9 and want to help unlock temperature/humidity sensor
 
 ## Changelog
 
+### v0.2.4
+- Fix: unsolicited BLE notify messages from the device no longer flood the HA error log with `QueueFull` exceptions — excess messages are silently discarded
+- Fix: if the ESPHome proxy TCP connection drops during idle disconnect, the coordinator now always cleans up the client reference and schedules a retry — previously this left polling dead until HA restarted
+
 ### v0.2.3
 - Add "Fan Speed" sensor (`Off` / `Low` / `High`) showing physical running state, independent of control mode — useful in TH mode where the fan cycles automatically
 - Fix: transient BLE GATT errors (e.g. ESPHome proxy error 133) no longer appear as ERROR in the HA log — already handled internally with backoff retry

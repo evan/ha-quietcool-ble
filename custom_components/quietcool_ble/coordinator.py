@@ -382,14 +382,22 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         async with self._connect_lock:
             if self._client is not None and self._client.is_connected:
                 self._expected_disconnect = True
-                await self._client.disconnect()
-                self._client = None
-                _LOGGER.debug(
-                    "QuietCool %s: idle disconnect (%.0fs timeout)",
-                    self.address,
-                    KEEP_ALIVE_SECONDS,
-                )
-                self._schedule_poll_timer()
+                try:
+                    await self._client.disconnect()
+                except Exception as err:  # noqa: BLE001
+                    _LOGGER.debug(
+                        "QuietCool %s: error during idle disconnect (ignored): %s",
+                        self.address,
+                        err,
+                    )
+                finally:
+                    self._client = None
+                    _LOGGER.debug(
+                        "QuietCool %s: idle disconnect (%.0fs timeout)",
+                        self.address,
+                        KEEP_ALIVE_SECONDS,
+                    )
+                    self._schedule_poll_timer()
 
     async def async_stop(self) -> None:
         """Cancel in-flight poll and close any open BLE connection."""

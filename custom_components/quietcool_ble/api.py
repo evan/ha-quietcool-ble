@@ -454,7 +454,13 @@ async def _send_command(client: BleakClient, payload: dict) -> dict:
                 _qq_seen,
             )
             recv_buffer = bytearray()
-            response_queue.put_nowait(msg)
+            try:
+                response_queue.put_nowait(msg)
+            except asyncio.QueueFull:
+                _LOGGER.debug(
+                    "QuietCool BLE %s: notify queue full, discarding extra message",
+                    cmd_label,
+                )
         except (json.JSONDecodeError, UnicodeDecodeError):
             _LOGGER.debug(
                 "QuietCool BLE %s: incomplete chunk, buffering (%d bytes so far)",
