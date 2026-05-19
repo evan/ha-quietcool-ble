@@ -180,7 +180,10 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         # Fetch firmware version once — it never changes during a device's lifetime
         if self.fan_version is None:
             try:
-                self.fan_version = await api.get_version_info(client)
+                self.fan_version = await api.get_version_info(
+                    client,
+                    protocol=self.fan_info.protocol,
+                )
                 _LOGGER.info(
                     "QuietCool %s firmware=%s hw=%s protect_temp=%d°F",
                     self.address,
@@ -193,7 +196,10 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
 
         # Fetch parameters every poll — user may change them from the app
         try:
-            self.fan_parameters = await api.get_parameters(client)
+            self.fan_parameters = await api.get_parameters(
+                client,
+                protocol=self.fan_info.protocol,
+            )
         except Exception as err:  # noqa: BLE001
             _LOGGER.debug("QuietCool %s GetParameter failed: %s", self.address, err)
 
@@ -206,7 +212,10 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         remain_seconds = 0
         if state.mode == api.FanMode.TIMER:
             try:
-                remain = await api.get_remain_time(client)
+                remain = await api.get_remain_time(
+                    client,
+                    protocol=self.fan_info.protocol,
+                )
                 remain_seconds = (
                     int(remain.get("RemainHour", 0)) * 3600
                     + int(remain.get("RemainMinute", 0)) * 60
@@ -312,6 +321,18 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
                 raise UpdateFailed(
                     "QuietCool login rejected — PhoneID mismatch or device was "
                     "reset. Re-pairing required."
+                )
+
+            login_protocol = getattr(client, "_quietcool_protocol", None)
+            if login_protocol and login_protocol != self.fan_info.protocol:
+                self.fan_info = dataclasses.replace(
+                    self.fan_info,
+                    protocol=login_protocol,
+                )
+                _LOGGER.debug(
+                    "QuietCool %s: protocol updated to %s from login response",
+                    self.address,
+                    login_protocol,
                 )
 
             self._client = client

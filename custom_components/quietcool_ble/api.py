@@ -20,7 +20,7 @@ Protocol auto-detected on first GetFanInfo call: if the response contains
 "N" (short key) rather than "Name" (long key), V2 is used for all subsequent
 commands on that connection.
 
-Temperature: Temp_Sample / 10 = °F (V1 key) or T / 10 = °F (V2 key — unconfirmed).
+Temperature: Temp_Sample / 10 = °F (V1 key) or T / 10 = °F (V2 key).
 Source: emerose/quietcool, reddit.com/r/homeassistant/comments/1kyv0pn (u/secretoftheeast)
 """
 from __future__ import annotations
@@ -48,20 +48,31 @@ class ProtocolVersion(StrEnum):
 
 
 # ---------------------------------------------------------------------------
-# V2 numeric API codes (reverse-engineered by u/secretoftheeast, Reddit 2025)
-# Only GetFanInfo (17) is confirmed. Others marked UNKNOWN and will fall back
-# to V1 format until hardware testing confirms the codes.
+# V2 numeric API codes from QuietCool Smart Control Android app 2.0.28.
 # ---------------------------------------------------------------------------
 
 class ApiCode(IntEnum):
-    GET_FAN_INFO = 17      # confirmed: {"A": 17} → {"N", "M", "S", "G"}
-    # The following are unconfirmed — firmware testing needed:
-    # GET_WORK_STATE = ?
-    # GET_PARAMETER = ?
-    # SET_MODE = ?
-    # SET_TIME = ?
-    # LOGIN = ?
-    # PAIR = ?
+    GET_WORK_STATE = 1
+    GET_PARAMETER = 2
+    GET_VERSION = 3
+    GET_ROUTER = 4
+    GET_UPGRADE_STATE = 5
+    SET_TEMP_HUMIDITY = 6
+    SET_TIME = 7
+    GET_REMAIN_TIME = 8
+    SET_MODE = 9
+    UPGRADE = 10
+    SET_ROUTER = 11
+    LOGIN = 13
+    PAIR = 14
+    PAIR_MODE = 15
+    SET_FAN_INFO = 16
+    GET_FAN_INFO = 17
+    SET_SPEED = 18
+    GET_PRESETS = 19
+    SET_PRESETS = 20
+    SET_GUIDE_SETUP = 21
+    RESET = 22
 
 
 # V2 response key → semantic name mapping (confirmed from u/secretoftheeast)
@@ -73,13 +84,42 @@ _V2_FAN_INFO_KEYS = {
     "A": "_api_code",
 }
 
-# V2 GetWorkState key mapping (unconfirmed — placeholders based on likely pattern)
-# Will be populated as hardware testing confirms the mapping.
 _V2_WORK_STATE_KEYS: dict[str, str] = {
-    # "X": "Mode",        # unknown key
-    # "Y": "Range",       # unknown key
-    # "T": "Temp_Sample", # unknown key
-    # "H": "Humidity_Sample", # unknown key
+    "T": "Temp_Sample",
+    "S": "SensorState",
+    "R": "Range",
+    "M": "Mode",
+    "H": "Humidity_Sample",
+    "C": "ControlType",
+}
+
+_V2_PARAMETER_KEYS: dict[str, str] = {
+    "M": "GuideSetup",
+    "L": "GetTime_Range",
+    "K": "GetMinute",
+    "J": "GetHour",
+    "I": "GetHum_Range",
+    "H": "GetHum_L",
+    "G": "GetHum_H",
+    "F": "GetTemp_L",
+    "E": "GetTemp_M",
+    "D": "GetTemp_H",
+    "C": "FanType",
+    "B": "Mode",
+}
+
+_V2_VERSION_KEYS: dict[str, str] = {
+    "V": "Version",
+    "P": "ProtectTemp",
+    "M": "Create_Mode",
+    "H": "MCU_Version",
+    "D": "Create_Date",
+}
+
+_V2_REMAIN_TIME_KEYS: dict[str, str] = {
+    "S": "RemainSecond",
+    "M": "RemainMinute",
+    "H": "RemainHour",
 }
 
 
@@ -158,13 +198,17 @@ class UnsupportedProtocolError(QuietCoolError):
 async def login(client: BleakClient, phone_id: str) -> bool:
     """Send Login. Returns True if authenticated, False if pairing needed.
 
-    Uses V1 format — u/secretoftheeast reports Login still works in V1 format
-    on firmware 3.9 devices. If this proves wrong, we'll need the V2 code.
+    Firmware 3.9+ accepts the V1 command body but responds with compact V2
+    keys: {"A": 13, "R": "Success", "P": "No"}.
     """
     resp = await _send_command(client, {"Api": "Login", "PhoneID": phone_id})
-    if resp.get("Result") == "Success":
+    result = resp.get("Result", resp.get("R"))
+    pair_state = resp.get("PairState", resp.get("P"))
+    login_protocol = ProtocolVersion.V2 if "R" in resp or "P" in resp else ProtocolVersion.V1
+    setattr(client, "_quietcool_protocol", login_protocol)
+    if result == "Success":
         return True
-    if "PairState" in resp:
+    if pair_state is not None:
         return False
     _LOGGER.warning("Unexpected login response: %s", resp)
     return False
@@ -225,28 +269,14 @@ async def get_work_state(client: BleakClient, protocol: str = ProtocolVersion.V1
     Pass the protocol version detected during get_fan_info() to use the
     correct wire format.
 
-    NOTE: V2 GetWorkState numeric code is not yet confirmed. On V2 devices
-    this will attempt V1 format (which the firmware 3.9 device reports returns
-    QQ{} — empty). Until the V2 code is reverse-engineered, V2 devices will
-    not have working sensor data. See GitHub issues for tracking.
+    V2 command/key mapping was recovered from QuietCool Smart Control
+    Android app 2.0.28.
     """
     if protocol == ProtocolVersion.V2:
-        # V2 GetWorkState code is unknown — log a diagnostic warning
-        _LOGGER.warning(
-            "Device uses firmware 3.9+ (V2 protocol). GetWorkState numeric API "
-            "code is not yet confirmed. Sensor data will be unavailable until "
-            "the V2 command mapping is reverse-engineered. "
-            "See: https://github.com/rwarner/hass-integration-quietcool/issues"
-        )
-        return FanState(
-            mode=FanMode.IDLE,
-            range=None,
-            temp_fahrenheit=None,
-            humidity_percent=None,
-            protocol=ProtocolVersion.V2,
-        )
-
-    resp = await _send_command(client, {"Api": "GetWorkState"})
+        resp = await _send_command(client, {"A": ApiCode.GET_WORK_STATE})
+        resp = _normalize_v2_response(resp, _V2_WORK_STATE_KEYS, "GetWorkState")
+    else:
+        resp = await _send_command(client, {"Api": "GetWorkState"})
 
     # Log any keys we don't recognise — helps discover undocumented fields.
     _KNOWN_WORK_STATE_KEYS = {
@@ -272,7 +302,7 @@ async def get_work_state(client: BleakClient, protocol: str = ProtocolVersion.V1
             else None
         ),
         sensor_state=resp.get("SensorState"),
-        protocol=ProtocolVersion.V1,
+        protocol=protocol,
     )
 
 
@@ -286,25 +316,42 @@ async def get_parameter(client: BleakClient) -> dict:
     return await _send_command(client, {"Api": "GetParameter"})
 
 
-async def get_remain_time(client: BleakClient) -> dict:
+async def get_remain_time(client: BleakClient, protocol: str = ProtocolVersion.V1) -> dict:
     """Fetch remaining timer countdown."""
+    if protocol == ProtocolVersion.V2:
+        resp = await _send_command(client, {"A": ApiCode.GET_REMAIN_TIME})
+        return _normalize_v2_response(resp, _V2_REMAIN_TIME_KEYS, "GetRemainTime")
     return await _send_command(client, {"Api": "GetRemainTime"})
 
 
-async def get_version_info(client: BleakClient) -> FanVersion:
+async def get_version_info(
+    client: BleakClient,
+    protocol: str = ProtocolVersion.V1,
+) -> FanVersion:
     """Fetch firmware version and device metadata."""
-    resp = await _send_command(client, {"Api": "GetVersion"})
+    if protocol == ProtocolVersion.V2:
+        resp = await _send_command(client, {"A": ApiCode.GET_VERSION})
+        resp = _normalize_v2_response(resp, _V2_VERSION_KEYS, "GetVersion")
+    else:
+        resp = await _send_command(client, {"Api": "GetVersion"})
     return FanVersion(
         firmware=str(resp.get("Version", ""))[:64].strip(),
-        hw_version=str(resp.get("HW_Version", ""))[:16].strip(),
+        hw_version=str(resp.get("HW_Version", resp.get("MCU_Version", "")))[:16].strip(),
         protect_temp=int(resp.get("ProtectTemp", 0)),
         create_date=str(resp.get("Create_Date", ""))[:32].strip(),
     )
 
 
-async def get_parameters(client: BleakClient) -> FanParameters:
+async def get_parameters(
+    client: BleakClient,
+    protocol: str = ProtocolVersion.V1,
+) -> FanParameters:
     """Fetch smart mode and timer threshold parameters."""
-    resp = await _send_command(client, {"Api": "GetParameter"})
+    if protocol == ProtocolVersion.V2:
+        resp = await _send_command(client, {"A": ApiCode.GET_PARAMETER})
+        resp = _normalize_v2_response(resp, _V2_PARAMETER_KEYS, "GetParameter")
+    else:
+        resp = await _send_command(client, {"Api": "GetParameter"})
     return FanParameters(
         temp_h=int(resp.get("GetTemp_H", 85)),
         temp_m=int(resp.get("GetTemp_M", 75)),
@@ -322,7 +369,8 @@ async def get_parameters(client: BleakClient) -> FanParameters:
 async def set_mode_idle(client: BleakClient, protocol: str = ProtocolVersion.V1) -> None:
     """Turn the fan off (Idle mode)."""
     if protocol == ProtocolVersion.V2:
-        _LOGGER.debug("V2 device: attempting SetMode Idle with V1 format")
+        await _send_command(client, {"A": ApiCode.SET_MODE, "M": FanMode.IDLE})
+        return
     await _send_command(client, {"Api": "SetMode", "Mode": FanMode.IDLE})
 
 
@@ -339,7 +387,12 @@ async def set_mode_timer(
     if not (0 <= hours <= 23 and 0 <= minutes <= 59):
         raise ValueError(f"Invalid timer duration: {hours}h {minutes}m")
     if protocol == ProtocolVersion.V2:
-        _LOGGER.debug("V2 device: attempting SetTime/SetMode with V1 format")
+        await _send_command(
+            client,
+            {"A": ApiCode.SET_TIME, "H": hours, "M": minutes, "R": speed},
+        )
+        await _send_command(client, {"A": ApiCode.SET_MODE, "M": FanMode.TIMER})
+        return
     await _send_command(
         client,
         {
@@ -355,7 +408,8 @@ async def set_mode_timer(
 async def set_mode_th(client: BleakClient, protocol: str = ProtocolVersion.V1) -> None:
     """Activate smart Thermostat+Humidity (TH) mode."""
     if protocol == ProtocolVersion.V2:
-        _LOGGER.debug("V2 device: attempting SetMode TH with V1 format")
+        await _send_command(client, {"A": ApiCode.SET_MODE, "M": FanMode.TH})
+        return
     await _send_command(client, {"Api": "SetMode", "Mode": FanMode.TH})
 
 
@@ -376,7 +430,20 @@ async def set_temp_humidity(
     All six fields are required — the device ignores partial writes.
     """
     if protocol == ProtocolVersion.V2:
-        _LOGGER.debug("V2 device: attempting SetTempHumidity with V1 format")
+        resp = await _send_command(
+            client,
+            {
+                "A": ApiCode.SET_TEMP_HUMIDITY,
+                "B": temp_h,
+                "C": temp_m,
+                "D": temp_l,
+                "E": hum_h,
+                "F": hum_l,
+                "G": hum_range,
+            },
+        )
+        _LOGGER.debug("SetTempHumidity response: %s", resp)
+        return
     resp = await _send_command(
         client,
         {
@@ -390,6 +457,13 @@ async def set_temp_humidity(
         },
     )
     _LOGGER.debug("SetTempHumidity response: %s", resp)
+
+
+def _normalize_v2_response(resp: dict, key_map: dict[str, str], api_name: str) -> dict:
+    """Translate a compact V2 response into the V1-style field names."""
+    normalized = {field: resp[key] for key, field in key_map.items() if key in resp}
+    normalized["Api"] = api_name
+    return normalized
 
 
 # ---------------------------------------------------------------------------
