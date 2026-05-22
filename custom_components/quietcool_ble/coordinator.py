@@ -323,18 +323,6 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
                     "reset. Re-pairing required."
                 )
 
-            login_protocol = getattr(client, "_quietcool_protocol", None)
-            if login_protocol and login_protocol != self.fan_info.protocol:
-                self.fan_info = dataclasses.replace(
-                    self.fan_info,
-                    protocol=login_protocol,
-                )
-                _LOGGER.debug(
-                    "QuietCool %s: protocol updated to %s from login response",
-                    self.address,
-                    login_protocol,
-                )
-
             self._client = client
             self._reset_idle_timer()
             _LOGGER.debug("QuietCool %s: authenticated, ready to poll", self.address)

@@ -20,7 +20,7 @@ Native Bluetooth Low Energy integration for QuietCool attic and whole-house fans
 
 All supported controllers advertise over BLE with a name beginning with `ATTICFAN`.
 
-> **Firmware 3.9+ note:** Fan control, smart mode, and threshold configuration work on all firmware versions. Temperature and humidity sensors are unavailable on firmware ≥ 3.9 until the V2 `GetWorkState` protocol code is confirmed — see [Protocol Research](#protocol-research).
+> **Firmware 3.9+ note:** All features — fan control, smart mode, temperature, humidity, timer, and threshold configuration — work on all supported firmware versions including 3.9+ / V4.x.
 
 ## What You Get
 
@@ -243,10 +243,6 @@ Thresholds are written with `SetTempHumidity`. All six fields are required per p
 ← {"Api": "SetTempHumidity", "Flag": "TRUE"}
 ```
 
-### Known Protocol Gaps
-
-The V2 numeric API code for `GetWorkState` has not yet been publicly confirmed. Until it is, **temperature and humidity sensors will be unavailable on firmware ≥ 3.9 devices**. Fan control and smart mode still work because `SetMode` and `SetTime` are accepted in V1 format on V2 firmware.
-
 ## Protocol Research
 
 | Source | Contribution |
@@ -254,11 +250,15 @@ The V2 numeric API code for `GetWorkState` has not yet been publicly confirmed. 
 | [emerose/quietcool](https://github.com/emerose/quietcool) | Original V1 reverse-engineering: command names, response keys, `Temp_Sample / 10` formula |
 | [alex-spyksma/quietcool](https://github.com/alex-spyksma/quietcool/tree/issue/3-cannot-import-main) | Additional commands: `GetVersion`, `GetRemainTime`, `GetParameter`, `SetTempHumidity` |
 | [u/secretoftheeast on Reddit](https://www.reddit.com/r/homeassistant/comments/1kyv0pn/quietcool_whole_house_fan_home_assistant/) | Discovered firmware 3.9+ V2 protocol: `QQ` prefix, numeric codes, single-character keys |
+| [@DillonBrown](https://github.com/DillonBrown) | Full V2 API code mapping from QuietCool Smart Control Android app 2.0.28; hardware-confirmed on V4.1 firmware |
 | [HA Community thread](https://community.home-assistant.io/t/quietcool-integration/913242) | Community reports and device compatibility |
 
-If you have firmware ≥ 3.9 and want to help unlock temperature/humidity sensors, capturing a BLE `GetWorkState` exchange with nRF Sniffer, Wireshark + HCI log, or Android BLE debugging would unblock it. Open an issue at [this repo](https://github.com/rwarner/ha-quietcool-ble/issues).
-
 ## Changelog
+
+### v0.2.5
+- Feat: full firmware 3.9+ / V2 protocol support — temperature, humidity, timer, and all threshold sensors now work on V4.x devices (thanks [@DillonBrown](https://github.com/DillonBrown))
+- All V2 numeric API codes mapped from QuietCool Smart Control Android app 2.0.28: `GetWorkState`, `GetVersion`, `GetParameter`, `GetRemainTime`, `SetMode`, `SetTime`, `SetTempHumidity`
+- Login now correctly parses compact V2 responses (`R`/`P` keys)
 
 ### v0.2.4
 - Fix: unsolicited BLE notify messages from the device no longer flood the HA error log with `QueueFull` exceptions — excess messages are silently discarded

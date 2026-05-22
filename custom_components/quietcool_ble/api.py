@@ -204,8 +204,6 @@ async def login(client: BleakClient, phone_id: str) -> bool:
     resp = await _send_command(client, {"Api": "Login", "PhoneID": phone_id})
     result = resp.get("Result", resp.get("R"))
     pair_state = resp.get("PairState", resp.get("P"))
-    login_protocol = ProtocolVersion.V2 if "R" in resp or "P" in resp else ProtocolVersion.V1
-    setattr(client, "_quietcool_protocol", login_protocol)
     if result == "Success":
         return True
     if pair_state is not None:
