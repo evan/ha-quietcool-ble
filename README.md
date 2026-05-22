@@ -71,13 +71,19 @@ When your fan is powered on and in BLE range, HA will show a notification:
 
 1. Click **Configure** in the notification (or go to **Settings → Integrations → Add Integration → QuietCool BLE**)
 2. Confirm the device name and MAC address shown
-3. **Hold the physical Pair button** on your QuietCool fan controller until the light flashes
+3. Trigger pairing mode on the fan controller (see below)
 4. Click **Submit** in the HA UI
 5. Done — all entities appear automatically
 
-### Finding the Pair Button
+### Triggering Pair Mode
 
-The Pair button is on the wall control unit or the small controller box mounted near the fan motor. It is typically labeled **"Pair"** or has a Bluetooth symbol. On the AFG SMT PRO-2.0, it is on the controller board inside the fan housing.
+You have two options — use whichever is easier:
+
+**Option A — QuietCool app (easiest, no ladder required):**
+Open the QuietCool Smart Control app → tap your device → tap **Pair Mode**. The controller enters pairing mode without you needing to physically reach it. This is the recommended approach if the fan is mounted in an attic or high on a gable.
+
+**Option B — Physical Pair button:**
+Hold the Pair button on the wall control unit or controller board until the light flashes. It is typically labeled **"Pair"** or has a Bluetooth symbol. On the AFG SMT PRO-2.0 it is on the controller board inside the fan housing.
 
 ## Entities
 
@@ -175,8 +181,9 @@ automation:
 - Try moving a BT proxy closer to the fan
 
 **Pairing failed:**
-- **Hold** the Pair button (not just tap) until the light flashes, then click Submit in HA
-- Only one device can be paired at a time. If the QuietCool Android app was used recently, it may have claimed the pairing slot. Try again.
+- If using the physical button, **hold** it (don't just tap) until the light flashes, then click Submit in HA
+- If the fan is hard to reach, use the QuietCool app instead: tap your device → **Pair Mode**
+- Only one device can be paired at a time. If the QuietCool app was used recently it may have claimed the pairing slot — trigger Pair Mode again and retry
 
 **Integration shows "unavailable" after setup:**
 - Power cycle the fan controller
