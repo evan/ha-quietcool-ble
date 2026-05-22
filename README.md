@@ -13,8 +13,9 @@ Native Bluetooth Low Energy integration for QuietCool attic and whole-house fans
 
 | Model | CFM | Speeds | BLE Name | Status |
 |---|---|---|---|---|
-| AFG SMT PRO-2.0 Smart Attic Fan | 1945 | Low / High | `ATTICFAN_*` | ✅ Hardware confirmed |
-| AFG SMT ES-2.0 / ES-3.0 | Various | Low / High | `ATTICFAN_*` | 🔲 Protocol confirmed, untested |
+| AFG SMT PRO-2.0 Smart Attic Fan | 1945 | Low / High | `ATTICFAN_*` | ✅ Hardware confirmed (firmware V3.0) |
+| AFC SMT ES-3.0 | Various | Low / High | `ATTICFAN_*` | ✅ Hardware confirmed (firmware V4.1) |
+| AFG SMT ES-2.0 | Various | Low / High | `ATTICFAN_*` | 🔲 Protocol confirmed, untested |
 | AFG SMT NR-A (2022 revision) | Various | Low / High | `ATTICFAN_*` | 🔲 Protocol confirmed, untested |
 | Other ESP32-based QuietCool controllers | Various | Unknown | `ATTICFAN_*` | 🔲 Untested |
 
