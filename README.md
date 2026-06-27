@@ -2,7 +2,7 @@
 
 Native Bluetooth Low Energy integration for QuietCool attic and whole-house fans. Auto-discovers fans, enables full speed and smart-mode control, and exposes temperature, humidity, and timer sensors — all using the stock manufacturer firmware with no hardware modification required.
 
-[![HACS Custom Repository](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz)
+[![HACS Default](https://img.shields.io/badge/HACS-Default-blue.svg)](https://hacs.xyz)
 [![Validate](https://github.com/rwarner/ha-quietcool-ble/actions/workflows/validate.yml/badge.svg)](https://github.com/rwarner/ha-quietcool-ble/actions/workflows/validate.yml)
 
 ## Status
@@ -14,7 +14,7 @@ Native Bluetooth Low Energy integration for QuietCool attic and whole-house fans
 | Model | CFM | Speeds | BLE Name | Status |
 |---|---|---|---|---|
 | AFG SMT PRO-2.0 Smart Attic Fan | 1945 | Low / High | `ATTICFAN_*` | ✅ Hardware confirmed (firmware V3.0) |
-| AFC SMT ES-3.0 | Various | Low / High | `ATTICFAN_*` | ✅ Hardware confirmed (firmware V4.1) |
+| AFG SMT ES-3.0 | 2801 | Low / High | `ATTICFAN_*` | ✅ Hardware confirmed (firmware V4.1) |
 | AFG SMT ES-2.0 | Various | Low / High | `ATTICFAN_*` | 🔲 Protocol confirmed, untested |
 | AFG SMT NR-A (2022 revision) | Various | Low / High | `ATTICFAN_*` | 🔲 Protocol confirmed, untested |
 | Other ESP32-based QuietCool controllers | Various | Unknown | `ATTICFAN_*` | 🔲 Untested |
@@ -55,10 +55,28 @@ All supported controllers advertise over BLE with a name beginning with `ATTICFA
 
 ### HACS (recommended)
 
-1. Open HACS → Integrations → ⋮ → Custom repositories
-2. Add `https://github.com/rwarner/ha-quietcool-ble` with category **Integration**
-3. Search for **QuietCool BLE** and install it
+This integration is in the **default HACS store**, so no custom repository is needed.
+
+[![Open in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=rwarner&repository=ha-quietcool-ble&category=integration)
+
+1. Open **HACS** in Home Assistant
+2. Search for **QuietCool BLE**
+3. Click it, then click **Download**
 4. Restart Home Assistant
+
+(Or use the **Open in HACS** button above to jump straight to the download page.)
+
+<details>
+<summary>Installing via custom repository (older HACS, or before the store updates)</summary>
+
+If **QuietCool BLE** doesn't appear in search yet:
+
+1. Open HACS → ⋮ (top right) → **Custom repositories**
+2. Add `https://github.com/rwarner/ha-quietcool-ble` with category **Integration**
+3. Search for **QuietCool BLE** and download it
+4. Restart Home Assistant
+
+</details>
 
 ### Manual
 
