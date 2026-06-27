@@ -14,12 +14,14 @@ Native Bluetooth Low Energy integration for QuietCool attic and whole-house fans
 | Model | CFM | Speeds | BLE Name | Status |
 |---|---|---|---|---|
 | AFG SMT PRO-2.0 Smart Attic Fan | 1945 | Low / High | `ATTICFAN_*` | ✅ Hardware confirmed (firmware V3.0) |
-| AFG SMT ES-3.0 | 2801 | Low / High | `ATTICFAN_*` | ✅ Hardware confirmed (firmware V4.1) |
+| AFG SMT ES-3.0 | 2801 | Low / Med† / High | `ATTICFAN_*` | ✅ Hardware confirmed (firmware V4.1) |
 | AFG SMT ES-2.0 | Various | Low / High | `ATTICFAN_*` | 🔲 Protocol confirmed, untested |
 | AFG SMT NR-A (2022 revision) | Various | Low / High | `ATTICFAN_*` | 🔲 Protocol confirmed, untested |
 | Other ESP32-based QuietCool controllers | Various | Unknown | `ATTICFAN_*` | 🔲 Untested |
 
 All supported controllers advertise over BLE with a name beginning with `ATTICFAN`.
+
+> † **Medium speed** is offered automatically on 3-speed fans — the integration shows it only when the firmware reports a 3-speed type, so 2-speed fans are unaffected. The medium BLE value is pending hardware confirmation ([#4](https://github.com/rwarner/ha-quietcool-ble/issues/4)).
 
 > **Firmware 3.9+ note:** All features — fan control, smart mode, temperature, humidity, timer, and threshold configuration — work on all supported firmware versions including 3.9+ / V4.x.
 
@@ -27,7 +29,7 @@ All supported controllers advertise over BLE with a name beginning with `ATTICFA
 
 **Fan control**
 - Turn on / off
-- Low and High speed presets
+- Low and High speed presets (plus Medium on 3-speed fans that report it)
 
 **Smart Mode (TH — Thermostat + Humidity)**
 - Automatic on/off based on attic temperature and humidity thresholds
@@ -108,9 +110,9 @@ Hold the Pair button on the wall control unit or controller board until the ligh
 
 | Entity | Type | Unit | Notes |
 |---|---|---|---|
-| Fan | `fan` | — | On/off, `Low` / `High` speed preset |
+| Fan | `fan` | — | On/off, `Low` / `High` speed preset (plus `Medium` on 3-speed fans) |
 | Mode | `select` | — | `Idle` / `Timer` / `TH` (smart mode) |
-| Fan Speed | `sensor` | — | Physical speed: `Off` / `Low` / `High` |
+| Fan Speed | `sensor` | — | Physical speed: `Off` / `Low` / `Medium` / `High` |
 | Temperature | `sensor` | °F | Attic temp: `Temp_Sample / 10` |
 | Humidity | `sensor` | % | Attic humidity: direct integer |
 | Timer Remaining | `sensor` | s | Countdown when in Timer mode |
@@ -280,6 +282,10 @@ Thresholds are written with `SetTempHumidity`. All six fields are required per p
 | [HA Community thread](https://community.home-assistant.io/t/quietcool-integration/913242) | Community reports and device compatibility |
 
 ## Changelog
+
+### v0.2.7
+- Fix: the **Fan Speed** sensor now reports `Medium` on 3-speed fans — previously a 3-speed fan running at medium would have shown `Off`. Completes the medium-speed support added in 0.2.6
+- Docs: supported-devices table, feature list, and entities table now reflect Medium speed on 3-speed fans
 
 ### v0.2.6
 - Feat: Medium speed preset for 3-speed fans (e.g. AFG SMT ES-3.0). Only shown when the firmware reports a 3-speed `FanType`; 2-speed fans are unaffected and still show Low / High only ([#4](https://github.com/rwarner/ha-quietcool-ble/issues/4))

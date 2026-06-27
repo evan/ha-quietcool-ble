@@ -73,16 +73,17 @@ class _QuietCoolSensorBase(CoordinatorEntity[QuietCoolBLECoordinator], SensorEnt
 
 
 class QuietCoolFanSpeedSensor(_QuietCoolSensorBase):
-    """Physical fan speed: Off / Low / High.
+    """Physical fan speed: Off / Low / Medium / High.
 
     Distinct from the Mode select (Idle / Timer / TH). In TH mode the
     controller automatically cycles the fan on and off as thresholds are
     crossed; this sensor reflects what the blades are actually doing now.
+    Medium only ever appears on 3-speed fans that report it.
     """
 
     _attr_device_class = SensorDeviceClass.ENUM
     _attr_name = "Fan Speed"
-    _attr_options = ["Off", "Low", "High"]
+    _attr_options = ["Off", "Low", "Medium", "High"]
 
     def __init__(self, coordinator: QuietCoolBLECoordinator) -> None:
         super().__init__(coordinator, "fan_speed")
@@ -98,6 +99,8 @@ class QuietCoolFanSpeedSensor(_QuietCoolSensorBase):
         speed = self.coordinator.fan_state.range
         if speed == FanSpeed.HIGH:
             return "High"
+        if speed == FanSpeed.MEDIUM:
+            return "Medium"
         if speed == FanSpeed.LOW:
             return "Low"
         return "Off"
