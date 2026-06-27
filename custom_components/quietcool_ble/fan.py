@@ -24,12 +24,21 @@ from .coordinator import QuietCoolBLECoordinator
 _LOGGER = logging.getLogger(__name__)
 
 PRESET_LOW = "Low"
+PRESET_MEDIUM = "Medium"
 PRESET_HIGH = "High"
 
 _PRESET_TO_BLE: dict[str, str] = {
     PRESET_LOW: FanSpeed.LOW,
+    PRESET_MEDIUM: FanSpeed.MEDIUM,
     PRESET_HIGH: FanSpeed.HIGH,
 }
+
+# FanType tokens (reported by the firmware) known to expose a third, medium speed.
+# Deliberately an allowlist, not a denylist: any fan that does NOT explicitly
+# report one of these — 2-speed fans ("TWO"), unknown/garbage values, and older
+# firmware that omits FanType (parameters None) — falls through to Low/High only
+# and can never be shown or sent MEDIUM.
+_THREE_SPEED_FAN_TYPES: frozenset[str] = frozenset({"THREE"})
 
 
 async def async_setup_entry(
@@ -51,7 +60,6 @@ class QuietCoolFanEntity(CoordinatorEntity[QuietCoolBLECoordinator], FanEntity):
         | FanEntityFeature.TURN_ON
         | FanEntityFeature.TURN_OFF
     )
-    _attr_preset_modes = [PRESET_LOW, PRESET_HIGH]
 
     def __init__(self, coordinator: QuietCoolBLECoordinator) -> None:
         super().__init__(coordinator)
@@ -80,12 +88,29 @@ class QuietCoolFanEntity(CoordinatorEntity[QuietCoolBLECoordinator], FanEntity):
         return self.coordinator.fan_state.mode != FanMode.IDLE
 
     @property
+    def preset_modes(self) -> list[str]:
+        """Speed presets this fan exposes.
+
+        Medium is offered only when the firmware explicitly reports a known
+        3-speed FanType. A missing or unknown FanType — including failed
+        parameter reads (fan_parameters is None) and older firmware that omits
+        the field — falls back to Low/High, so a 2-speed fan can never be shown
+        or sent MEDIUM.
+        """
+        params = self.coordinator.fan_parameters
+        if params is not None and params.fan_type in _THREE_SPEED_FAN_TYPES:
+            return [PRESET_LOW, PRESET_MEDIUM, PRESET_HIGH]
+        return [PRESET_LOW, PRESET_HIGH]
+
+    @property
     def preset_mode(self) -> str | None:
         if self.coordinator.fan_state is None:
             return None
         speed = self.coordinator.fan_state.range
         if speed == FanSpeed.HIGH:
             return PRESET_HIGH
+        if speed == FanSpeed.MEDIUM:
+            return PRESET_MEDIUM
         if speed == FanSpeed.LOW:
             return PRESET_LOW
         return None
@@ -135,4 +160,8 @@ class QuietCoolFanEntity(CoordinatorEntity[QuietCoolBLECoordinator], FanEntity):
         }
         if self.coordinator.fan_state.sensor_state is not None:
             attrs["sensor_state"] = self.coordinator.fan_state.sensor_state
+        # Diagnostic: surfaces the firmware-reported speed-count token (e.g. "TWO"/"THREE")
+        # so 3-speed support can be confirmed in the field. Drives the Medium preset gate.
+        if self.coordinator.fan_parameters is not None:
+            attrs["fan_type"] = self.coordinator.fan_parameters.fan_type
         return attrs

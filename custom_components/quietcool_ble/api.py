@@ -135,6 +135,7 @@ class FanMode(StrEnum):
 
 class FanSpeed(StrEnum):
     HIGH = "HIGH"
+    MEDIUM = "MEDIUM"  # 3-speed ECM fans only (e.g. AFG SMT ES-3.0); BLE token is a best-guess, unconfirmed
     LOW = "LOW"
 
 
@@ -380,8 +381,8 @@ async def set_mode_timer(
     protocol: str = ProtocolVersion.V1,
 ) -> None:
     """Turn the fan on at the given speed for the given duration."""
-    if speed not in (FanSpeed.HIGH, FanSpeed.LOW):
-        raise ValueError(f"Invalid speed {speed!r}; must be 'HIGH' or 'LOW'")
+    if speed not in (FanSpeed.HIGH, FanSpeed.MEDIUM, FanSpeed.LOW):
+        raise ValueError(f"Invalid speed {speed!r}; must be 'HIGH', 'MEDIUM', or 'LOW'")
     if not (0 <= hours <= 23 and 0 <= minutes <= 59):
         raise ValueError(f"Invalid timer duration: {hours}h {minutes}m")
     if protocol == ProtocolVersion.V2:

@@ -281,6 +281,11 @@ Thresholds are written with `SetTempHumidity`. All six fields are required per p
 
 ## Changelog
 
+### v0.2.6
+- Feat: Medium speed preset for 3-speed fans (e.g. AFG SMT ES-3.0). Only shown when the firmware reports a 3-speed `FanType`; 2-speed fans are unaffected and still show Low / High only ([#4](https://github.com/rwarner/ha-quietcool-ble/issues/4))
+- Add `fan_type` diagnostic attribute to the fan entity, exposing the firmware-reported speed-count token so 3-speed support can be confirmed in the field
+- Note: the BLE value for medium (`"MEDIUM"`) and the 3-speed token (`"THREE"`) are best-guesses pending hardware confirmation on a 3-speed unit
+
 ### v0.2.5
 - Feat: full firmware 3.9+ / V2 protocol support — temperature, humidity, timer, and all threshold sensors now work on V4.x devices (thanks [@DillonBrown](https://github.com/DillonBrown))
 - All V2 numeric API codes mapped from QuietCool Smart Control Android app 2.0.28: `GetWorkState`, `GetVersion`, `GetParameter`, `GetRemainTime`, `SetMode`, `SetTime`, `SetTempHumidity`
