@@ -135,7 +135,7 @@ class FanMode(StrEnum):
 
 class FanSpeed(StrEnum):
     HIGH = "HIGH"
-    MEDIUM = "MEDIUM"  # 3-speed ECM fans only (e.g. AFG SMT ES-3.0); BLE token is a best-guess, unconfirmed
+    MEDIUM = "MEDIUM"  # 3-speed ECM fans only (e.g. AFG SMT ES-3.0); hardware-confirmed on firmware V4.1 (#4)
     LOW = "LOW"
 
 
