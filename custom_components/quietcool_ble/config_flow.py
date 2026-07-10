@@ -116,12 +116,20 @@ class QuietCoolBLEConfigFlow(ConfigFlow, domain=DOMAIN):
         )
 
     async def _attempt_pair(self) -> str:
-        """Try to BLE-pair with the device. Returns 'success' or an error key."""
+        """Pair with the device and confirm it on a fresh connection.
+
+        Returns 'success' or an error key. The confirming login runs on a NEW
+        connection because that is exactly what the coordinator does on every
+        poll — a PhoneID that works only for the pairing session but is not
+        persisted would otherwise pass here and then leave the device
+        permanently unavailable.
+        """
         assert self._discovery_info is not None
         device = self._discovery_info.device
 
+        # 1) Pair — api.pair() tries the legacy V1 command, then the V2 sequence.
         try:
-            client = await establish_connection(
+            pair_client = await establish_connection(
                 BleakClientWithServiceCache,
                 device,
                 device.address,
@@ -130,28 +138,50 @@ class QuietCoolBLEConfigFlow(ConfigFlow, domain=DOMAIN):
         except Exception:
             _LOGGER.exception("Could not connect to %s during pairing", device.address)
             return "cannot_connect"
-
         try:
-            try:
-                paired = await api.pair(client, self._phone_id)
-            except Exception:
-                _LOGGER.exception("Pair command failed for %s", device.address)
-                return "pair_failed"
+            paired = await api.pair(pair_client, self._phone_id)
+        except Exception:
+            _LOGGER.exception("Pair command failed for %s", device.address)
+            return "pair_failed"
+        finally:
+            await pair_client.disconnect()
 
-            if not paired:
-                return "pair_failed"
+        if not paired:
+            return "pair_failed"
 
-            # pair() already confirmed a working login on this connection —
-            # fetch device info over the same authenticated session.
+        # 2) Confirm on a FRESH connection — this is the real-world test that the
+        #    PhoneID actually persisted (not just for the pairing session), since
+        #    the coordinator always logs in on a new connection. Fetch info here.
+        try:
+            verify_client = await establish_connection(
+                BleakClientWithServiceCache,
+                device,
+                device.address,
+                max_attempts=MAX_CONNECT_ATTEMPTS,
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Could not reconnect to confirm pairing for %s", device.address
+            )
+            return "cannot_connect"
+        try:
+            if not await api.login(verify_client, self._phone_id):
+                _LOGGER.warning(
+                    "Pairing not persisted: login failed on a fresh connection "
+                    "for %s — the fan acknowledged pairing but did not store the "
+                    "PhoneID.",
+                    device.address,
+                )
+                return "pair_failed"
             try:
-                fan_info = await api.get_fan_info(client)
+                fan_info = await api.get_fan_info(verify_client)
                 self.context["fan_info"] = fan_info
             except Exception:
                 _LOGGER.warning(
                     "Could not fetch fan info after pairing; using defaults"
                 )
         finally:
-            await client.disconnect()
+            await verify_client.disconnect()
 
         return "success"
 

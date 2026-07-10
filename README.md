@@ -283,6 +283,9 @@ Thresholds are written with `SetTempHumidity`. All six fields are required per p
 
 ## Changelog
 
+### v0.2.9
+- Fix: pairing is now confirmed with a login on a **fresh** BLE connection — the same way the coordinator connects on every poll. Previously the check reused the pairing connection, so a fan that accepted the PhoneID only for that session (but didn't persist it) could report success and then go unavailable. Follows up on the 0.2.8 pairing fix
+
 ### v0.2.8
 - Fix: pairing on firmware 3.9+ / V4.x fans. The controller can acknowledge the legacy pair command without actually registering Home Assistant's PhoneID, leaving every entity permanently unavailable. Pairing now **verifies with a real login**, and if the legacy pair isn't accepted it sends the **V2 pair sequence** (PairMode → Pair). Reported on AFG SMT PRO-2.0 firmware 4.1
 - Hardening: the config flow reports pairing success only when login actually works — a non-registering pair now fails clearly instead of creating a dead device
