@@ -283,6 +283,11 @@ Thresholds are written with `SetTempHumidity`. All six fields are required per p
 
 ## Changelog
 
+### v0.2.8
+- Fix: pairing on firmware 3.9+ / V4.x fans. The controller can acknowledge the legacy pair command without actually registering Home Assistant's PhoneID, leaving every entity permanently unavailable. Pairing now **verifies with a real login**, and if the legacy pair isn't accepted it sends the **V2 pair sequence** (PairMode → Pair). Reported on AFG SMT PRO-2.0 firmware 4.1
+- Hardening: the config flow reports pairing success only when login actually works — a non-registering pair now fails clearly instead of creating a dead device
+- More verbose pairing logs to aid diagnosis
+
 ### v0.2.7
 - Medium speed is now **hardware-confirmed** on the AFG SMT ES-3.0 (firmware V4.1): the fan reports `FanType: THREE` and accepts `MEDIUM` as a speed — matching the values shipped in 0.2.6 ([#4](https://github.com/rwarner/ha-quietcool-ble/issues/4))
 - Fix: the **Fan Speed** sensor now reports `Medium` on 3-speed fans — previously a 3-speed fan running at medium would have shown `Off`. Completes the medium-speed support added in 0.2.6

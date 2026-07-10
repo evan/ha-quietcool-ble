@@ -132,34 +132,26 @@ class QuietCoolBLEConfigFlow(ConfigFlow, domain=DOMAIN):
             return "cannot_connect"
 
         try:
-            paired = await api.pair(client, self._phone_id)
-        except Exception:
-            _LOGGER.exception("Pair command failed for %s", device.address)
-            return "pair_failed"
+            try:
+                paired = await api.pair(client, self._phone_id)
+            except Exception:
+                _LOGGER.exception("Pair command failed for %s", device.address)
+                return "pair_failed"
+
+            if not paired:
+                return "pair_failed"
+
+            # pair() already confirmed a working login on this connection —
+            # fetch device info over the same authenticated session.
+            try:
+                fan_info = await api.get_fan_info(client)
+                self.context["fan_info"] = fan_info
+            except Exception:
+                _LOGGER.warning(
+                    "Could not fetch fan info after pairing; using defaults"
+                )
         finally:
             await client.disconnect()
-
-        if not paired:
-            return "pair_failed"
-
-        # Fetch device info after successful pairing
-        try:
-            info_client = await establish_connection(
-                BleakClientWithServiceCache,
-                device,
-                device.address,
-                max_attempts=MAX_CONNECT_ATTEMPTS,
-            )
-            try:
-                logged_in = await api.login(info_client, self._phone_id)
-                if logged_in:
-                    self._discovery_info = self._discovery_info  # keep reference
-                    fan_info = await api.get_fan_info(info_client)
-                    self.context["fan_info"] = fan_info
-            finally:
-                await info_client.disconnect()
-        except Exception:
-            _LOGGER.warning("Could not fetch fan info after pairing; using defaults")
 
         return "success"
 
