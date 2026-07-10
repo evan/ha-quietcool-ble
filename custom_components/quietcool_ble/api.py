@@ -213,52 +213,32 @@ async def login(client: BleakClient, phone_id: str) -> bool:
     return False
 
 
-async def pair(client: BleakClient, phone_id: str) -> bool:
-    """Register this PhoneID with the controller and confirm it actually works.
+async def pair_v1(client: BleakClient, phone_id: str) -> None:
+    """Send the legacy V1 Pair command. Registers the PhoneID on firmware < 3.9.
 
-    The device must be in pairing mode (physical Pair button pressed, or the
-    QuietCool app's Pair Mode). Returns True only if a real Login succeeds after
-    pairing — the controller ACKs a Pair command even when it does NOT persist
-    the PhoneID, so an ACK alone is never trusted.
-
-    Two attempts, each verified by an actual login:
-      1. Legacy V1 Pair — ``{"Api": "Pair", ...}``. Registers on firmware < 3.9.
-      2. V2 sequence — PairMode (A:15) then Pair (A:14). Firmware 3.9+ (V4.x)
-         ACKs the V1 Pair but only persists a new PhoneID via this sequence.
+    This only sends the command — the caller must confirm the PhoneID actually
+    persisted by logging in on a *fresh* connection. The controller ACKs a Pair
+    command even when it does not store the PhoneID, so the ACK is not trusted.
     """
-    # Attempt 1 — legacy V1 pair.
-    v1 = await _send_command(client, {"Api": "Pair", "PhoneID": phone_id})
-    _LOGGER.debug("QuietCool pair: V1 Pair response: %s", v1)
-    if await login(client, phone_id):
-        _LOGGER.debug("QuietCool pair: registration confirmed via V1 pair")
-        return True
+    resp = await _send_command(client, {"Api": "Pair", "PhoneID": phone_id})
+    _LOGGER.debug("QuietCool pair: V1 Pair response: %s", resp)
 
-    # Attempt 2 — V2 pair sequence (firmware 3.9+). The controller accepts V1
-    # command bodies (login proves this) but appears to require an explicit
-    # PairMode before it will persist a newly presented PhoneID.
-    _LOGGER.debug(
-        "QuietCool pair: V1 pair not confirmed by login; trying V2 sequence"
-    )
+
+async def pair_v2(client: BleakClient, phone_id: str) -> None:
+    """Send the V2 pair sequence (PairMode then Pair) for firmware 3.9+ / V4.x.
+
+    The controller accepts V1 command bodies (login proves this) but appears to
+    require an explicit PairMode before it will persist a newly presented
+    PhoneID. As with pair_v1, the caller confirms with a fresh-connection login.
+    """
     try:
         pm = await _send_command(client, {"A": ApiCode.PAIR_MODE})
         _LOGGER.debug("QuietCool pair: V2 PairMode response: %s", pm)
     except TimeoutError:
         # PairMode does not reply on some firmware — that is fine, keep going.
         _LOGGER.debug("QuietCool pair: V2 PairMode sent (no response)")
-    v2 = await _send_command(client, {"A": ApiCode.PAIR, "PhoneID": phone_id})
-    _LOGGER.debug("QuietCool pair: V2 Pair response: %s", v2)
-    if await login(client, phone_id):
-        _LOGGER.debug("QuietCool pair: registration confirmed via V2 pair")
-        return True
-
-    _LOGGER.warning(
-        "QuietCool pair: PhoneID not registered after V1 and V2 attempts "
-        "(V1 resp=%s, V2 resp=%s). The fan may need pairing from the QuietCool "
-        "app, or uses an unrecognized pairing protocol.",
-        v1,
-        v2,
-    )
-    return False
+    resp = await _send_command(client, {"A": ApiCode.PAIR, "PhoneID": phone_id})
+    _LOGGER.debug("QuietCool pair: V2 Pair response: %s", resp)
 
 
 async def get_fan_info(client: BleakClient) -> FanInfo:

@@ -283,6 +283,9 @@ Thresholds are written with `SetTempHumidity`. All six fields are required per p
 
 ## Changelog
 
+### v0.2.10
+- Fix: pairing now tries the legacy (V1) pair **and** the V2 pair sequence, confirming **each** attempt with a login on a fresh connection. Previously, if the legacy pair was accepted for the pairing session but not truly persisted, the V2 sequence was never tried — so newly-paired firmware 3.9+ / V4.x fans could still end up permanently unavailable. Existing/working fans are unaffected (they succeed on the first attempt and never reach the V2 path)
+
 ### v0.2.9
 - Fix: pairing is now confirmed with a login on a **fresh** BLE connection — the same way the coordinator connects on every poll. Previously the check reused the pairing connection, so a fan that accepted the PhoneID only for that session (but didn't persist it) could report success and then go unavailable. Follows up on the 0.2.8 pairing fix
 
