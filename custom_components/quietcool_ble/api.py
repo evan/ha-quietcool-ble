@@ -227,9 +227,11 @@ async def pair_v1(client: BleakClient, phone_id: str) -> None:
 async def pair_v2(client: BleakClient, phone_id: str) -> None:
     """Send the V2 pair sequence (PairMode then Pair) for firmware 3.9+ / V4.x.
 
-    The controller accepts V1 command bodies (login proves this) but appears to
-    require an explicit PairMode before it will persist a newly presented
-    PhoneID. As with pair_v1, the caller confirms with a fresh-connection login.
+    The V2 Pair command is numeric code 14 with the PhoneID under the short key
+    ``"P"`` (not ``"PhoneID"``) — matching snyamathi/quietcool, whose V2 support
+    is confirmed on V4.1 hardware. Some V2 firmware also resets the BLE
+    connection instead of replying to Pair, so a missing/failed response is not
+    treated as fatal — the caller confirms with a fresh-connection login.
     """
     try:
         pm = await _send_command(client, {"A": ApiCode.PAIR_MODE})
@@ -237,8 +239,12 @@ async def pair_v2(client: BleakClient, phone_id: str) -> None:
     except TimeoutError:
         # PairMode does not reply on some firmware — that is fine, keep going.
         _LOGGER.debug("QuietCool pair: V2 PairMode sent (no response)")
-    resp = await _send_command(client, {"A": ApiCode.PAIR, "PhoneID": phone_id})
-    _LOGGER.debug("QuietCool pair: V2 Pair response: %s", resp)
+    try:
+        resp = await _send_command(client, {"A": ApiCode.PAIR, "P": phone_id})
+        _LOGGER.debug("QuietCool pair: V2 Pair response: %s", resp)
+    except TimeoutError:
+        # V2 firmware may reset the connection instead of replying — expected.
+        _LOGGER.debug("QuietCool pair: V2 Pair sent (no response — likely reset)")
 
 
 async def get_fan_info(client: BleakClient) -> FanInfo:

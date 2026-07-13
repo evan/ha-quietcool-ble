@@ -148,11 +148,21 @@ class QuietCoolBLEConfigFlow(ConfigFlow, domain=DOMAIN):
         device = self._discovery_info.device
 
         for send_pair in (api.pair_v1, api.pair_v2):
+            # Send the pairing command(s) on one connection. A dropped/reset
+            # connection here is expected on some V2 firmware and is NOT fatal —
+            # the fresh-connection login below is the real test of persistence.
             try:
-                # Send the pairing command(s) on one connection...
                 async with self._connect(device) as client:
                     await send_pair(client, self._phone_id)
-                # ...then confirm persistence with a login on a fresh connection.
+            except Exception:
+                _LOGGER.debug(
+                    "QuietCool %s: pairing connection ended early (may be an "
+                    "expected V2 reset); verifying anyway",
+                    device.address,
+                )
+
+            # Confirm persistence with a login on a fresh connection.
+            try:
                 async with self._connect(device) as client:
                     if not await api.login(client, self._phone_id):
                         continue  # not persisted — try the next method
@@ -164,7 +174,7 @@ class QuietCoolBLEConfigFlow(ConfigFlow, domain=DOMAIN):
                         )
                     return "success"
             except Exception:
-                _LOGGER.exception("Pairing attempt failed for %s", device.address)
+                _LOGGER.exception("Pairing verification failed for %s", device.address)
                 return "cannot_connect"
 
         _LOGGER.warning(

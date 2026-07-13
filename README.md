@@ -283,6 +283,10 @@ Thresholds are written with `SetTempHumidity`. All six fields are required per p
 
 ## Changelog
 
+### v0.2.11
+- Fix: the V2 pair command now sends the PhoneID under the short key `P` (`{"A":14,"P":…}`) instead of `PhoneID`, matching the QuietCool V2 protocol as implemented by `snyamathi/quietcool` (confirmed on V4.1 hardware). Debug logs from a firmware 4.1 fan showed the old form being rejected (`{"A":14,"R":"Fail"}`), which blocked pairing on newer firmware
+- Also tolerates the V2 controller resetting the BLE connection in response to Pair (documented behavior on some firmware) — pairing is still confirmed by a login on a fresh connection
+
 ### v0.2.10
 - Fix: pairing now tries the legacy (V1) pair **and** the V2 pair sequence, confirming **each** attempt with a login on a fresh connection. Previously, if the legacy pair was accepted for the pairing session but not truly persisted, the V2 sequence was never tried — so newly-paired firmware 3.9+ / V4.x fans could still end up permanently unavailable. Existing/working fans are unaffected (they succeed on the first attempt and never reach the V2 path)
 
