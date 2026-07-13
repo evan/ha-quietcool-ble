@@ -294,6 +294,11 @@ Thresholds are written with `SetTempHumidity`. All six fields are required per p
 
 ## Changelog
 
+### v0.2.12
+- Fix: reloading or removing the integration crashed with `AttributeError: 'super' object has no attribute 'async_stop'` — the base coordinator has no `async_stop()` (its teardown is registered via `async_on_unload`). Removed the bad `super()` call. This also unbreaks the reauth flow's reload step ([#8](https://github.com/rwarner/ha-quietcool-ble/issues/8))
+- Feat: the fan now also exposes percentage-based speed (`SET_SPEED`) mapped onto its Low/[Medium/]High steps, so the **HomeKit bridge** shows a working speed slider and the current running speed. The named presets remain available for HA control and automations ([#6](https://github.com/rwarner/ha-quietcool-ble/issues/6))
+- Feat: the setup screen now accepts an optional **Phone ID** — enter a known ID (from a previous setup, an ESPHome config, or the QuietCool app) to skip pairing and just log in. This is the reliable path on firmware 3.9+ where pairing a *new* ID can fail, and it reflects that controllers store **multiple** Phone IDs, not a single slot ([#5](https://github.com/rwarner/ha-quietcool-ble/issues/5))
+
 ### v0.2.11
 - Fix: the V2 pair command now sends the PhoneID under the short key `P` (`{"A":14,"P":…}`) instead of `PhoneID`, matching the QuietCool V2 protocol as implemented by `snyamathi/quietcool`. Debug logs from a firmware 4.1 fan showed the old form being rejected (`{"A":14,"R":"Fail"}`), which blocked pairing on newer firmware
 - Also tolerates the V2 controller resetting the BLE connection in response to Pair (documented behavior on some firmware) — pairing is still confirmed by a login on a fresh connection
