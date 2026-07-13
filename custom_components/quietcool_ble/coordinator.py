@@ -315,8 +315,8 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
             return
         self._reauth_in_progress = True
         _LOGGER.warning(
-            "QuietCool %s: authentication rejected — the fan's single pairing slot "
-            "was taken over (usually by the QuietCool app). Prompting re-pair.",
+            "QuietCool %s: authentication rejected — the fan is no longer accepting "
+            "our Phone ID. Prompting re-pair.",
             self.address,
         )
         try:
@@ -392,15 +392,15 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
                         f"QuietCool login rejected (attempt {self._auth_failures}"
                         f"/{AUTH_FAILURE_LIMIT}); retrying"
                     )
-                # Persistent rejection — the fan pairs with one device at a time,
-                # so this almost always means the QuietCool app re-paired and
-                # evicted us. Start the reauth flow (fires for both poll and command
-                # paths) and raise ConfigEntryAuthFailed instead of spinning.
+                # Persistent rejection — the fan is no longer accepting our Phone
+                # ID (the pairing didn't persist, or the controller dropped it).
+                # Start the reauth flow (fires for both poll and command paths) and
+                # raise ConfigEntryAuthFailed instead of spinning.
                 self._start_reauth()
                 raise ConfigEntryAuthFailed(
-                    "QuietCool login rejected — Home Assistant's pairing was "
-                    "replaced. The fan pairs with one device at a time; re-pair to "
-                    "give Home Assistant control back."
+                    "QuietCool login rejected — the fan is no longer accepting "
+                    "Home Assistant's Phone ID. Re-pair, or re-add with a known "
+                    "Phone ID, to reconnect."
                 )
 
             self._auth_failures = 0

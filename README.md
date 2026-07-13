@@ -106,17 +106,6 @@ Open the QuietCool Smart Control app → tap your device → tap **Pair Mode**. 
 **Option B — Physical Pair button:**
 Hold the Pair button on the wall control unit or controller board until the light flashes. It is typically labeled **"Pair"** or has a Bluetooth symbol. On the AFG SMT PRO-2.0 it is on the controller board inside the fan housing.
 
-## Troubleshooting
-
-### Entities go unavailable / "login rejected" after using the QuietCool app
-
-**This is expected — the fan pairs with one device at a time.** The controller keeps a single pairing slot, so whichever device paired most recently owns it:
-
-- Pairing Home Assistant **disconnects the QuietCool app.**
-- Opening the QuietCool app **re-pairs the app and evicts Home Assistant** — its login is then rejected (`Login ← Fail / PairState No` in the logs) and all entities go unavailable.
-
-Home Assistant and the app therefore **can't both be connected at once.** To give Home Assistant control back, re-pair it: when the entities are unavailable, HA shows a **"Reconfigure"** prompt on the integration — click it, put the fan in [Pair Mode](#triggering-pair-mode), and re-pair. (Or delete and re-add the integration.) After that, avoid opening the QuietCool app if you want Home Assistant to stay connected.
-
 ## Entities
 
 | Entity | Type | Unit | Notes |
@@ -215,14 +204,16 @@ automation:
 **Pairing failed:**
 - If using the physical button, **hold** it (don't just tap) until the light flashes, then click Submit in HA
 - If the fan is hard to reach, use the QuietCool app instead: tap your device → **Pair Mode**
-- Only one device can be paired at a time. If the QuietCool app was used recently it may have claimed the pairing slot — trigger Pair Mode again and retry
+- On **firmware 3.9+ / V4.x** fans, pairing a *new* Phone ID can fail. If it does, enter an **existing Phone ID** (from a prior setup, an ESPHome config, or the QuietCool app) on the setup screen to skip pairing and just log in
 
 **Integration shows "unavailable" after setup:**
 - Power cycle the fan controller
 - In HA: Settings → Integrations → QuietCool BLE → ⋮ → Reload
 
-**QuietCool app stopped working after setup:**
-The fan stores exactly one pairing credential. Pairing with the QuietCool Android app will overwrite it and break this integration until you re-pair (Settings → Integrations → QuietCool BLE → ⋮ → Re-authenticate).
+**Entities go "unavailable," or the app and Home Assistant seem to fight:**
+The fan stores **multiple** Phone IDs, but only one device can be *connected* at a time — so using the QuietCool app can interrupt Home Assistant's connection (and vice-versa). Home Assistant reconnects on its own once the fan is free, as long as its Phone ID is still accepted.
+
+If entities stay unavailable, Home Assistant's login is being rejected — its Phone ID is no longer registered (the pairing may not have persisted on firmware 3.9+, or the controller dropped it). Home Assistant then shows a **re-pair prompt** automatically when it detects this. You can also delete and re-add the integration and **enter a known Phone ID** on the setup screen to reconnect without re-pairing.
 
 **Threshold changes not sticking:**
 Thresholds are written with the `SetTempHumidity` command and confirmed with a `GetParameter` read on the next poll. If the UI shows the new value but the next poll reverts it, open an issue with your debug logs.
@@ -298,13 +289,14 @@ Thresholds are written with `SetTempHumidity`. All six fields are required per p
 - Fix: reloading or removing the integration crashed with `AttributeError: 'super' object has no attribute 'async_stop'` — the base coordinator has no `async_stop()` (its teardown is registered via `async_on_unload`). Removed the bad `super()` call. This also unbreaks the reauth flow's reload step ([#8](https://github.com/rwarner/ha-quietcool-ble/issues/8))
 - Feat: the fan now also exposes percentage-based speed (`SET_SPEED`) mapped onto its Low/[Medium/]High steps, so the **HomeKit bridge** shows a working speed slider and the current running speed. The named presets remain available for HA control and automations ([#6](https://github.com/rwarner/ha-quietcool-ble/issues/6))
 - Feat: the setup screen now accepts an optional **Phone ID** — enter a known ID (from a previous setup, an ESPHome config, or the QuietCool app) to skip pairing and just log in. This is the reliable path on firmware 3.9+ where pairing a *new* ID can fail, and it reflects that controllers store **multiple** Phone IDs, not a single slot ([#5](https://github.com/rwarner/ha-quietcool-ble/issues/5))
+- Docs: corrected the pairing/connection docs — controllers store **multiple** Phone IDs (not a single slot), and the app and Home Assistant share one BLE connection at a time. Removed a duplicate Troubleshooting section and the inaccurate "⋮ → Re-authenticate" menu-button reference (re-pair is prompted automatically when the fan stops accepting our Phone ID)
 
 ### v0.2.11
 - Fix: the V2 pair command now sends the PhoneID under the short key `P` (`{"A":14,"P":…}`) instead of `PhoneID`, matching the QuietCool V2 protocol as implemented by `snyamathi/quietcool`. Debug logs from a firmware 4.1 fan showed the old form being rejected (`{"A":14,"R":"Fail"}`), which blocked pairing on newer firmware
 - Also tolerates the V2 controller resetting the BLE connection in response to Pair (documented behavior on some firmware) — pairing is still confirmed by a login on a fresh connection
-- Feat: when the controller rejects login (e.g. its pairing slot was taken over by the QuietCool app), Home Assistant now raises a re-authentication prompt — a one-click **Reconfigure** to re-pair — instead of leaving entities silently unavailable. Wires up the previously dormant reauth flow (`ConfigEntryAuthFailed`); reauth updates the existing entry's PhoneID instead of creating a duplicate
+- Feat: when the controller stops accepting Home Assistant's Phone ID (e.g. after using the QuietCool app, or if the fan drops it), Home Assistant now raises a re-authentication prompt — a one-click re-pair — instead of leaving entities silently unavailable. Wires up the previously dormant reauth flow (`ConfigEntryAuthFailed`); reauth updates the existing entry's PhoneID instead of creating a duplicate
 - Feat: **Download diagnostics** support on the device page (PhoneID, serial, and address redacted) — dumps firmware, protocol, `fan_type`, parameters, and current state to make issue reports easy
-- Docs: pairing screen and a new **Troubleshooting** section explain that the fan pairs with one device at a time — using the app disconnects Home Assistant and vice-versa
+- Docs: pairing screen and Troubleshooting notes on re-pairing when the fan stops accepting Home Assistant's Phone ID
 
 ### v0.2.10
 - Fix: pairing now tries the legacy (V1) pair **and** the V2 pair sequence, confirming **each** attempt with a login on a fresh connection. Previously, if the legacy pair was accepted for the pairing session but not truly persisted, the V2 sequence was never tried — so newly-paired firmware 3.9+ / V4.x fans could still end up permanently unavailable. Existing/working fans are unaffected (they succeed on the first attempt and never reach the V2 path)
