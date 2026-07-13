@@ -490,7 +490,15 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
                     self._schedule_poll_timer()
 
     async def async_stop(self) -> None:
-        """Cancel in-flight poll and close any open BLE connection."""
+        """Cancel in-flight poll and close any open BLE connection.
+
+        The base ActiveBluetoothDataUpdateCoordinator has no async_stop(); its
+        teardown is the unregister callback returned by async_start(), which
+        __init__.py registers via entry.async_on_unload(). So we only clean up
+        our own poll task, timers, and BLE connection here — calling
+        super().async_stop() raised AttributeError and broke every unload/reload
+        (and the reauth flow's reload). See issue #8.
+        """
         if self._poll_task and not self._poll_task.done():
             self._poll_task.cancel()
             try:
@@ -503,4 +511,3 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
             self._poll_timer_handle.cancel()
             self._poll_timer_handle = None
         await self._async_idle_disconnect()
-        await super().async_stop()
