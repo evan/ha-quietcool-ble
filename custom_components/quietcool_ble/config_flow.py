@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 import secrets
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -22,7 +22,12 @@ from homeassistant.components.bluetooth import (
     BluetoothServiceInfoBleak,
     async_discovered_service_info,
 )
-from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import (
+    SOURCE_REAUTH,
+    ConfigEntry,
+    ConfigFlow,
+    ConfigFlowResult,
+)
 from homeassistant.const import CONF_ADDRESS
 
 from . import api
@@ -147,6 +152,11 @@ class QuietCoolBLEConfigFlow(ConfigFlow, domain=DOMAIN):
         assert self._discovery_info is not None
         device = self._discovery_info.device
 
+        # Whether any attempt got a definitive login result (True/False). If we
+        # only ever hit connection errors, the fan was unreachable → cannot_connect;
+        # if we reached a login but nothing persisted → pair_failed.
+        reached_login = False
+
         for send_pair in (api.pair_v1, api.pair_v2):
             # Send the pairing command(s) on one connection. A dropped/reset
             # connection here is expected on some V2 firmware and is NOT fatal —
@@ -161,10 +171,14 @@ class QuietCoolBLEConfigFlow(ConfigFlow, domain=DOMAIN):
                     device.address,
                 )
 
-            # Confirm persistence with a login on a fresh connection.
+            # Confirm persistence with a login on a fresh connection. A transient
+            # connection error here is not fatal — fall through to the next method
+            # rather than aborting, so a flaky V1 verify can't mask a working V2.
             try:
                 async with self._connect(device) as client:
-                    if not await api.login(client, self._phone_id):
+                    persisted = await api.login(client, self._phone_id)
+                    reached_login = True
+                    if not persisted:
                         continue  # not persisted — try the next method
                     try:
                         self.context["fan_info"] = await api.get_fan_info(client)
@@ -174,9 +188,15 @@ class QuietCoolBLEConfigFlow(ConfigFlow, domain=DOMAIN):
                         )
                     return "success"
             except Exception:
-                _LOGGER.exception("Pairing verification failed for %s", device.address)
-                return "cannot_connect"
+                _LOGGER.debug(
+                    "QuietCool %s: verification connection failed; trying next "
+                    "method",
+                    device.address,
+                )
+                continue
 
+        if not reached_login:
+            return "cannot_connect"
         _LOGGER.warning(
             "Pairing not persisted for %s after V1 and V2 attempts — the fan "
             "acknowledged pairing but did not store the PhoneID. It may need to "
@@ -186,8 +206,29 @@ class QuietCoolBLEConfigFlow(ConfigFlow, domain=DOMAIN):
         return "pair_failed"
 
     def _create_entry(self) -> ConfigFlowResult:
-        """Create the config entry after successful pairing."""
+        """Create the config entry after successful pairing.
+
+        During reauth the entry already exists — update its PhoneID with the
+        freshly paired one and reload, rather than creating a duplicate.
+        """
         assert self._discovery_info is not None
+
+        if self.source == SOURCE_REAUTH:
+            entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
+            assert entry is not None
+            # Update the existing entry's PhoneID and reload. Done manually rather
+            # than via async_update_reload_and_abort(), which does not exist on the
+            # minimum supported HA version (2023.7) — this is what that helper does
+            # internally in newer versions.
+            self.hass.config_entries.async_update_entry(
+                entry, data={**entry.data, CONF_PHONE_ID: self._phone_id}
+            )
+            self.hass.async_create_task(
+                self.hass.config_entries.async_reload(entry.entry_id),
+                name=f"quietcool reauth reload {entry.entry_id}",
+            )
+            return self.async_abort(reason="reauth_successful")
+
         fan_info = self.context.get("fan_info")
 
         return self.async_create_entry(
@@ -245,7 +286,7 @@ class QuietCoolBLEConfigFlow(ConfigFlow, domain=DOMAIN):
     # ------------------------------------------------------------------
 
     async def async_step_reauth(
-        self, entry_data: dict[str, Any]
+        self, entry_data: Mapping[str, Any]
     ) -> ConfigFlowResult:
         """Re-pair after PhoneID was overwritten by another client."""
         entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])

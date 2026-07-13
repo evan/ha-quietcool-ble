@@ -22,4 +22,6 @@ All QuietCool ESP32-based controllers that advertise over BLE with a name beginn
 
 ## Setup
 
-When your fan is powered on and in BLE range, HA will show a discovery notification. Click Configure, then **hold** the physical **Pair button** on the fan controller until the light flashes, then click Submit.
+When your fan is powered on and in BLE range, HA will show a discovery notification. Click Configure, then put the fan in **Pair Mode** (QuietCool app → Pair Mode, or hold the physical **Pair button** until the light flashes) and click Submit.
+
+> **Note:** the fan pairs with **one device at a time**. Pairing Home Assistant disconnects the QuietCool app, and using the app again disconnects Home Assistant — HA will then prompt you to re-pair.

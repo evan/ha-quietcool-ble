@@ -30,7 +30,9 @@ from homeassistant.components.bluetooth import (
 from homeassistant.components.bluetooth.active_update_coordinator import (
     ActiveBluetoothDataUpdateCoordinator,
 )
+from homeassistant.config_entries import SOURCE_REAUTH, ConfigEntry
 from homeassistant.core import CoreState, HomeAssistant, callback
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from . import api
@@ -45,6 +47,10 @@ _LOGGER = logging.getLogger(__name__)
 
 _BleOperation: TypeAlias = Callable[[BleakClient], Awaitable[None]]
 
+# Consecutive login rejections before we conclude the PhoneID was evicted and
+# prompt the user to re-pair. Guards against transient/garbled BLE reads.
+AUTH_FAILURE_LIMIT = 3
+
 
 class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
     """Manages all BLE communication for a single QuietCool fan device."""
@@ -53,6 +59,7 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         self,
         hass: HomeAssistant,
         logger: logging.Logger,
+        entry: ConfigEntry,
         address: str,
         phone_id: str,
         fan_info: FanInfo,
@@ -66,6 +73,7 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
             poll_method=self._async_poll,
             connectable=True,
         )
+        self._entry = entry
         self.phone_id = phone_id
         self.fan_info: FanInfo = fan_info
         self.fan_state: FanState | None = None
@@ -89,6 +97,8 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         self._poll_timer_handle: asyncio.TimerHandle | None = None
         self._poll_task: asyncio.Task[Any] | None = None
         self._consecutive_failures = 0
+        self._auth_failures = 0
+        self._reauth_in_progress = False
 
     # ------------------------------------------------------------------
     # Poll scheduling
@@ -113,16 +123,28 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
                 self.hass, service_info.device.address, connectable=True
             )
         )
-        result = ha_ok and interval_ok and connectable
+        # Don't poll while a re-pair (reauth) flow is already awaiting the user.
+        # We'd just reconnect, fail login, and re-trigger the same flow every
+        # interval — needless BLE churn and log spam. If the user dismisses the
+        # flow, this goes empty and polling resumes (re-detecting the eviction).
+        reauth_pending = any(
+            self._entry.async_get_active_flows(self.hass, {SOURCE_REAUTH})
+        )
+        if not reauth_pending:
+            # No reauth flow outstanding — clear the synchronous guard so a later
+            # eviction can prompt again (e.g. after the user dismissed the prompt).
+            self._reauth_in_progress = False
+        result = ha_ok and interval_ok and connectable and not reauth_pending
         _LOGGER.debug(
             "QuietCool %s _needs_poll: ha_ok=%s interval_ok=%s "
-            "(since_last=%.0fs interval=%.0fs) connectable=%s → %s",
+            "(since_last=%.0fs interval=%.0fs) connectable=%s reauth_pending=%s → %s",
             self.address,
             ha_ok,
             interval_ok,
             seconds_since_last_poll if seconds_since_last_poll is not None else -1,
             self._poll_interval(),
             connectable,
+            reauth_pending,
             result,
         )
         return result
@@ -151,6 +173,13 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
             # only fires _listeners on BLE advertisement events, not after polls.
             for update_callback, _ in list(self._listeners.values()):
                 update_callback()
+        except ConfigEntryAuthFailed:
+            # Reauth was already started in _ensure_connected. Swallow without
+            # rescheduling: a successful re-pair reloads the entry, and _needs_poll
+            # suppresses polls while the reauth flow is pending.
+            _LOGGER.debug(
+                "QuietCool %s: poll skipped — awaiting re-pair", self.address
+            )
         except UpdateFailed:
             self._consecutive_failures += 1
             _LOGGER.debug(
@@ -254,7 +283,9 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
                 await operation(client)
         except TimeoutError as err:
             raise UpdateFailed(str(err)) from err
-        except UpdateFailed:
+        except (UpdateFailed, ConfigEntryAuthFailed):
+            # ConfigEntryAuthFailed must NOT be masked as UpdateFailed — the poll
+            # loop needs to see it to hand off to the reauth flow.
             raise
         except Exception as err:
             raise UpdateFailed(f"BLE operation failed: {err}") from err
@@ -262,6 +293,38 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
     # ------------------------------------------------------------------
     # Connection lifecycle — led_ble dual-lock pattern
     # ------------------------------------------------------------------
+
+    @callback
+    def _start_reauth(self) -> None:
+        """Start HA's reauth flow so the user can re-pair. Idempotent and safe.
+
+        Invoked from both the poll loop and the command path when the controller
+        rejects our PhoneID. No-op if a reauth flow is already pending, and it
+        never lets flow bookkeeping propagate — a failure here must not kill the
+        poll loop or a service call.
+
+        `_reauth_in_progress` is set synchronously to bridge the gap between
+        async_start_reauth() scheduling the flow and it appearing in
+        async_get_active_flows(); without it, a second trigger inside that window
+        could start a duplicate flow. _needs_poll clears the flag once no reauth
+        flow is outstanding.
+        """
+        if self._reauth_in_progress or any(
+            self._entry.async_get_active_flows(self.hass, {SOURCE_REAUTH})
+        ):
+            return
+        self._reauth_in_progress = True
+        _LOGGER.warning(
+            "QuietCool %s: authentication rejected — the fan's single pairing slot "
+            "was taken over (usually by the QuietCool app). Prompting re-pair.",
+            self.address,
+        )
+        try:
+            self._entry.async_start_reauth(self.hass)
+        except Exception:  # noqa: BLE001 — reauth bookkeeping must never kill polling
+            _LOGGER.exception(
+                "QuietCool %s: failed to start reauth flow", self.address
+            )
 
     async def _ensure_connected(self) -> BleakClientWithServiceCache:
         """Return the active BLE connection, opening one if needed.
@@ -318,11 +381,29 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
             if not authenticated:
                 self._expected_disconnect = True
                 await client.disconnect()
-                raise UpdateFailed(
-                    "QuietCool login rejected — PhoneID mismatch or device was "
-                    "reset. Re-pairing required."
+                self._auth_failures += 1
+                # A single login=False can be a transient/garbled BLE read, so we
+                # retry (UpdateFailed → backoff) a few times before concluding the
+                # PhoneID was really evicted. Only after AUTH_FAILURE_LIMIT
+                # consecutive failures do we surface the re-pair prompt — otherwise
+                # flaky BLE would pop spurious "Reconfigure" cards.
+                if self._auth_failures < AUTH_FAILURE_LIMIT:
+                    raise UpdateFailed(
+                        f"QuietCool login rejected (attempt {self._auth_failures}"
+                        f"/{AUTH_FAILURE_LIMIT}); retrying"
+                    )
+                # Persistent rejection — the fan pairs with one device at a time,
+                # so this almost always means the QuietCool app re-paired and
+                # evicted us. Start the reauth flow (fires for both poll and command
+                # paths) and raise ConfigEntryAuthFailed instead of spinning.
+                self._start_reauth()
+                raise ConfigEntryAuthFailed(
+                    "QuietCool login rejected — Home Assistant's pairing was "
+                    "replaced. The fan pairs with one device at a time; re-pair to "
+                    "give Home Assistant control back."
                 )
 
+            self._auth_failures = 0
             self._client = client
             self._reset_idle_timer()
             _LOGGER.debug("QuietCool %s: authenticated, ready to poll", self.address)

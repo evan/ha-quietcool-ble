@@ -106,6 +106,17 @@ Open the QuietCool Smart Control app → tap your device → tap **Pair Mode**. 
 **Option B — Physical Pair button:**
 Hold the Pair button on the wall control unit or controller board until the light flashes. It is typically labeled **"Pair"** or has a Bluetooth symbol. On the AFG SMT PRO-2.0 it is on the controller board inside the fan housing.
 
+## Troubleshooting
+
+### Entities go unavailable / "login rejected" after using the QuietCool app
+
+**This is expected — the fan pairs with one device at a time.** The controller keeps a single pairing slot, so whichever device paired most recently owns it:
+
+- Pairing Home Assistant **disconnects the QuietCool app.**
+- Opening the QuietCool app **re-pairs the app and evicts Home Assistant** — its login is then rejected (`Login ← Fail / PairState No` in the logs) and all entities go unavailable.
+
+Home Assistant and the app therefore **can't both be connected at once.** To give Home Assistant control back, re-pair it: when the entities are unavailable, HA shows a **"Reconfigure"** prompt on the integration — click it, put the fan in [Pair Mode](#triggering-pair-mode), and re-pair. (Or delete and re-add the integration.) After that, avoid opening the QuietCool app if you want Home Assistant to stay connected.
+
 ## Entities
 
 | Entity | Type | Unit | Notes |
@@ -284,8 +295,11 @@ Thresholds are written with `SetTempHumidity`. All six fields are required per p
 ## Changelog
 
 ### v0.2.11
-- Fix: the V2 pair command now sends the PhoneID under the short key `P` (`{"A":14,"P":…}`) instead of `PhoneID`, matching the QuietCool V2 protocol as implemented by `snyamathi/quietcool` (confirmed on V4.1 hardware). Debug logs from a firmware 4.1 fan showed the old form being rejected (`{"A":14,"R":"Fail"}`), which blocked pairing on newer firmware
+- Fix: the V2 pair command now sends the PhoneID under the short key `P` (`{"A":14,"P":…}`) instead of `PhoneID`, matching the QuietCool V2 protocol as implemented by `snyamathi/quietcool`. Debug logs from a firmware 4.1 fan showed the old form being rejected (`{"A":14,"R":"Fail"}`), which blocked pairing on newer firmware
 - Also tolerates the V2 controller resetting the BLE connection in response to Pair (documented behavior on some firmware) — pairing is still confirmed by a login on a fresh connection
+- Feat: when the controller rejects login (e.g. its pairing slot was taken over by the QuietCool app), Home Assistant now raises a re-authentication prompt — a one-click **Reconfigure** to re-pair — instead of leaving entities silently unavailable. Wires up the previously dormant reauth flow (`ConfigEntryAuthFailed`); reauth updates the existing entry's PhoneID instead of creating a duplicate
+- Feat: **Download diagnostics** support on the device page (PhoneID, serial, and address redacted) — dumps firmware, protocol, `fan_type`, parameters, and current state to make issue reports easy
+- Docs: pairing screen and a new **Troubleshooting** section explain that the fan pairs with one device at a time — using the app disconnects Home Assistant and vice-versa
 
 ### v0.2.10
 - Fix: pairing now tries the legacy (V1) pair **and** the V2 pair sequence, confirming **each** attempt with a login on a fresh connection. Previously, if the legacy pair was accepted for the pairing session but not truly persisted, the V2 sequence was never tried — so newly-paired firmware 3.9+ / V4.x fans could still end up permanently unavailable. Existing/working fans are unaffected (they succeed on the first attempt and never reach the V2 path)

@@ -8,7 +8,7 @@
       },
       "pair": {
         "title": "Pair with {name}",
-        "description": "**Hold the physical Pair button** on your QuietCool fan controller until the light flashes, then click Submit.\n\nThe Pair button is located on the fan's wall control unit or the controller mounted near the fan."
+        "description": "Put the fan in **Pair Mode**, then click Submit.\n\n**Easiest:** open the QuietCool app → your fan → **Pair Mode** (no ladder needed).\n\n**Or:** hold the physical **Pair** button on the fan's wall control unit / controller until the light flashes.\n\nThe fan pairs with **one device at a time** — pairing here disconnects the QuietCool app, and using the app again will disconnect Home Assistant."
       },
       "user": {
         "title": "Set up QuietCool BLE",

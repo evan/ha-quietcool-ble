@@ -65,6 +65,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = QuietCoolBLECoordinator(
         hass=hass,
         logger=_LOGGER,
+        entry=entry,
         address=address,
         phone_id=phone_id,
         fan_info=fan_info,
