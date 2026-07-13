@@ -3,18 +3,20 @@
 Flow steps:
   bluetooth    → auto-triggered when ATTICFAN* advertisement seen
   bluetooth_confirm → user confirms the device (confirm-only; PhoneID auto-generated)
-  pair         → user presses physical Pair button; BLE Pair command is sent
+  pair         → pair the fan, OR reuse an existing PhoneID to skip pairing
   user         → manual fallback when no auto-discovery is available
-  reauth       → re-pair after PhoneID eviction (Android app conflict)
+  reauth       → re-pair after the PhoneID stops being accepted
 """
 from __future__ import annotations
 
 import logging
+import re
 import secrets
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from typing import Any
 
+import voluptuous as vol
 from bleak.backends.device import BLEDevice
 from bleak_retry_connector import BleakClientWithServiceCache, establish_connection
 
@@ -49,6 +51,16 @@ _LOGGER = logging.getLogger(__name__)
 def _generate_phone_id() -> str:
     """Generate a cryptographically random 16-char hex PhoneID."""
     return secrets.token_hex(8)
+
+
+# Accepts the two formats QuietCool controllers use: a 16-char hex string
+# (this integration / ESPHome) or a UUID (the QuietCool app).
+_PHONE_ID_RE = re.compile(r"^[0-9a-fA-F-]{8,40}$")
+
+
+def _is_valid_phone_id(phone_id: str) -> bool:
+    """True if the string looks like a QuietCool PhoneID (hex or UUID)."""
+    return bool(_PHONE_ID_RE.fullmatch(phone_id))
 
 
 class QuietCoolBLEConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -104,24 +116,73 @@ class QuietCoolBLEConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_pair(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Prompt user to press physical Pair button, then attempt BLE pairing."""
+        """Pair the fan, or reuse an existing Phone ID to skip pairing.
+
+        Leaving the Phone ID field blank pairs normally (generate a new ID and
+        register it). Entering a known Phone ID — e.g. from a previous setup, an
+        ESPHome config, or the QuietCool app — skips pairing and just verifies
+        with a login, which is the reliable path on firmware 3.9+ where pairing
+        a new ID can fail.
+        """
         assert self._discovery_info is not None
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            result = await self._attempt_pair()
-            if result == "success":
-                return self._create_entry()
-            errors["base"] = result  # "pair_failed" or "cannot_connect"
+            entered_id = (user_input.get(CONF_PHONE_ID) or "").strip()
+            if entered_id:
+                if not _is_valid_phone_id(entered_id):
+                    errors["base"] = "invalid_phone_id"
+                else:
+                    # Commit the entered ID only on success — otherwise a later
+                    # blank submit ("pair a new one") must still regenerate.
+                    result = await self._verify_existing_id(entered_id)
+                    if result == "success":
+                        self._phone_id = entered_id
+                        return self._create_entry()
+                    errors["base"] = result  # "login_failed" / "cannot_connect"
+            else:
+                if not self._phone_id:
+                    self._phone_id = _generate_phone_id()
+                result = await self._attempt_pair()
+                if result == "success":
+                    return self._create_entry()
+                errors["base"] = result  # "pair_failed" / "cannot_connect"
 
         return self.async_show_form(
             step_id="pair",
             errors=errors,
+            data_schema=vol.Schema({vol.Optional(CONF_PHONE_ID): str}),
             description_placeholders={
                 "name": self._discovery_info.name,
                 "address": self._discovery_info.address,
             },
         )
+
+    async def _verify_existing_id(self, phone_id: str) -> str:
+        """Confirm a user-supplied Phone ID by logging in — no pairing.
+
+        Takes the candidate ID as an argument (rather than self._phone_id) so the
+        caller only commits it on success. Returns 'success', 'login_failed' (the
+        ID isn't registered on the fan), or 'cannot_connect'.
+        """
+        assert self._discovery_info is not None
+        device = self._discovery_info.device
+        try:
+            async with self._connect(device) as client:
+                if not await api.login(client, phone_id):
+                    return "login_failed"
+                try:
+                    self.context["fan_info"] = await api.get_fan_info(client)
+                except Exception:
+                    _LOGGER.warning(
+                        "Could not fetch fan info after login; using defaults"
+                    )
+                return "success"
+        except Exception:
+            _LOGGER.exception(
+                "Could not connect to verify Phone ID for %s", device.address
+            )
+            return "cannot_connect"
 
     @asynccontextmanager
     async def _connect(
@@ -259,8 +320,6 @@ class QuietCoolBLEConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if not discovered_devices:
             return self.async_abort(reason="no_devices_found")
-
-        import voluptuous as vol
 
         if user_input is not None:
             address = user_input[CONF_ADDRESS]

@@ -8,7 +8,10 @@
       },
       "pair": {
         "title": "Pair with {name}",
-        "description": "Put the fan in **Pair Mode**, then click Submit.\n\n**Easiest:** open the QuietCool app → your fan → **Pair Mode** (no ladder needed).\n\n**Or:** hold the physical **Pair** button on the fan's wall control unit / controller until the light flashes.\n\nThe fan pairs with **one device at a time** — pairing here disconnects the QuietCool app, and using the app again will disconnect Home Assistant."
+        "description": "Put the fan in **Pair Mode**, then click Submit.\n\n**Easiest:** open the QuietCool app → your fan → **Pair Mode** (no ladder needed).\n\n**Or:** hold the physical **Pair** button on the fan's wall control unit / controller until the light flashes.\n\n**Already have a Phone ID?** From a previous setup, an ESPHome config, or the QuietCool app — enter it below to skip pairing (the reliable path on newer firmware). Leave blank to pair a new one.",
+        "data": {
+          "phone_id": "Phone ID (optional — leave blank to pair)"
+        }
       },
       "user": {
         "title": "Set up QuietCool BLE",
@@ -19,7 +22,9 @@
     },
     "error": {
       "cannot_connect": "Cannot connect to the fan over Bluetooth. Ensure the fan is powered on and within range.",
-      "pair_failed": "Pairing failed. Press the Pair button on the fan controller first, then try again."
+      "pair_failed": "Pairing failed. Press the Pair button on the fan controller first, then try again.",
+      "invalid_phone_id": "That doesn't look like a valid Phone ID — it should be a hex string or a UUID.",
+      "login_failed": "The fan didn't accept that Phone ID. Make sure it's registered on this fan, or leave the field blank to pair a new one."
     },
     "abort": {
       "already_configured": "This fan is already configured.",
