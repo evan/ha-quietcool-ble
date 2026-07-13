@@ -53,13 +53,16 @@ def _generate_phone_id() -> str:
     return secrets.token_hex(8)
 
 
-# Accepts the two formats QuietCool controllers use: a 16-char hex string
-# (this integration / ESPHome) or a UUID (the QuietCool app).
-_PHONE_ID_RE = re.compile(r"^[0-9a-fA-F-]{8,40}$")
+# Phone IDs vary in format: 16 lowercase hex (OEM/ESPHome convention), UUIDs
+# (the QuietCool app), and other alphanumeric strings (never-paired hubs ship
+# with a factory id like "1234567dsad8wqw9asasd"). The controller accepts up to
+# 100 bytes. Accept alphanumeric + dashes; a wrong-but-valid-looking id simply
+# fails login. (Per the OEM BLE protocol docs, CrazyCoder/quietcool-esphome-native.)
+_PHONE_ID_RE = re.compile(r"^[0-9a-zA-Z-]{8,100}$")
 
 
 def _is_valid_phone_id(phone_id: str) -> bool:
-    """True if the string looks like a QuietCool PhoneID (hex or UUID)."""
+    """True if the string looks like a plausible QuietCool PhoneID."""
     return bool(_PHONE_ID_RE.fullmatch(phone_id))
 
 
