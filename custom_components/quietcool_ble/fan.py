@@ -15,6 +15,10 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util.percentage import (
+    ordered_list_item_to_percentage,
+    percentage_to_ordered_list_item,
+)
 
 from . import api
 from .api import FanMode, FanSpeed
@@ -57,6 +61,7 @@ class QuietCoolFanEntity(CoordinatorEntity[QuietCoolBLECoordinator], FanEntity):
     _attr_name = None  # Primary entity; device name is the entity name
     _attr_supported_features = (
         FanEntityFeature.PRESET_MODE
+        | FanEntityFeature.SET_SPEED
         | FanEntityFeature.TURN_ON
         | FanEntityFeature.TURN_OFF
     )
@@ -115,12 +120,40 @@ class QuietCoolFanEntity(CoordinatorEntity[QuietCoolBLECoordinator], FanEntity):
             return PRESET_LOW
         return None
 
+    @property
+    def speed_count(self) -> int:
+        """Number of discrete speeds (2 for Low/High, 3 for Low/Med/High)."""
+        return len(self.preset_modes)
+
+    @property
+    def percentage(self) -> int | None:
+        """Current speed as a percentage (0 = off).
+
+        Maps the discrete Low/[Medium/]High speeds onto a percentage so the
+        HomeKit bridge shows a speed slider and the current running speed. The
+        named presets remain available for HA control and automations.
+        """
+        if self.coordinator.fan_state is None:
+            return None
+        preset = self.preset_mode
+        if preset is None:
+            return 0  # idle / off
+        presets = self.preset_modes
+        if preset not in presets:
+            return None  # running at a speed not in the current list — unknown %
+        return ordered_list_item_to_percentage(presets, preset)
+
     async def async_turn_on(
         self,
         percentage: int | None = None,
         preset_mode: str | None = None,
         **kwargs: Any,
     ) -> None:
+        # HomeKit / % callers pass a percentage rather than a named preset.
+        if preset_mode is None and percentage is not None and percentage > 0:
+            preset_mode = percentage_to_ordered_list_item(
+                self.preset_modes, percentage
+            )
         speed = _PRESET_TO_BLE.get(preset_mode or PRESET_LOW, FanSpeed.LOW)
         protocol = self.coordinator.fan_info.protocol
         await self.coordinator.async_execute(
@@ -149,6 +182,14 @@ class QuietCoolFanEntity(CoordinatorEntity[QuietCoolBLECoordinator], FanEntity):
         if self.is_on:
             await self.async_turn_on(preset_mode=preset_mode)
         # If fan is off, just update the pending preset without turning on
+
+    async def async_set_percentage(self, percentage: int) -> None:
+        """Set fan speed by percentage (0 = off). Used by HomeKit's slider."""
+        if percentage == 0:
+            await self.async_turn_off()
+            return
+        preset = percentage_to_ordered_list_item(self.preset_modes, percentage)
+        await self.async_turn_on(preset_mode=preset)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
