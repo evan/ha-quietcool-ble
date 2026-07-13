@@ -281,6 +281,7 @@ Thresholds are written with `SetTempHumidity`. All six fields are required per p
 | [alex-spyksma/quietcool](https://github.com/alex-spyksma/quietcool/tree/issue/3-cannot-import-main) | Additional commands: `GetVersion`, `GetRemainTime`, `GetParameter`, `SetTempHumidity` |
 | [u/secretoftheeast on Reddit](https://www.reddit.com/r/homeassistant/comments/1kyv0pn/quietcool_whole_house_fan_home_assistant/) | Discovered firmware 3.9+ V2 protocol: `QQ` prefix, numeric codes, single-character keys |
 | [@DillonBrown](https://github.com/DillonBrown) | Full V2 API code mapping from QuietCool Smart Control Android app 2.0.28; hardware-confirmed on V4.1 firmware |
+| [CrazyCoder/quietcool-esphome-native](https://github.com/CrazyCoder/quietcool-esphome-native) | Authoritative [OEM BLE protocol documentation](https://github.com/CrazyCoder/quietcool-esphome-native/blob/main/docs/OEM-BLE-PROTOCOL.md) — confirmed the pairing/login sequence, `PairState` semantics, the 50-PhoneID storage limit, and the full API code table |
 | [HA Community thread](https://community.home-assistant.io/t/quietcool-integration/913242) | Community reports and device compatibility |
 
 ## Changelog
@@ -290,6 +291,7 @@ Thresholds are written with `SetTempHumidity`. All six fields are required per p
 - Feat: the fan now also exposes percentage-based speed (`SET_SPEED`) mapped onto its Low/[Medium/]High steps, so the **HomeKit bridge** shows a working speed slider and the current running speed. The named presets remain available for HA control and automations ([#6](https://github.com/rwarner/ha-quietcool-ble/issues/6))
 - Feat: the setup screen now accepts an optional **Phone ID** — enter a known ID (from a previous setup, an ESPHome config, or the QuietCool app) to skip pairing and just log in. This is the reliable path on firmware 3.9+ where pairing a *new* ID can fail, and it reflects that controllers store **multiple** Phone IDs, not a single slot ([#5](https://github.com/rwarner/ha-quietcool-ble/issues/5))
 - Docs: corrected the pairing/connection docs — controllers store **multiple** Phone IDs (not a single slot), and the app and Home Assistant share one BLE connection at a time. Removed a duplicate Troubleshooting section and the inaccurate "⋮ → Re-authenticate" menu-button reference (re-pair is prompted automatically when the fan stops accepting our Phone ID)
+- Thanks to [@CrazyCoder](https://github.com/CrazyCoder) for publishing authoritative [OEM BLE protocol documentation](https://github.com/CrazyCoder/quietcool-esphome-native/blob/main/docs/OEM-BLE-PROTOCOL.md), which confirmed the pairing/login sequence and Phone ID handling above. Their [ESPHome native firmware](https://github.com/CrazyCoder/quietcool-esphome-native) is a great alternative if BLE pairing is troublesome — see Related Projects
 
 ### v0.2.11
 - Fix: the V2 pair command now sends the PhoneID under the short key `P` (`{"A":14,"P":…}`) instead of `PhoneID`, matching the QuietCool V2 protocol as implemented by `snyamathi/quietcool`. Debug logs from a firmware 4.1 fan showed the old form being rejected (`{"A":14,"R":"Fail"}`), which blocked pairing on newer firmware
@@ -347,7 +349,9 @@ Thresholds are written with `SetTempHumidity`. All six fields are required per p
 
 ## Related Projects
 
+- [CrazyCoder/quietcool-esphome-native](https://github.com/CrazyCoder/quietcool-esphome-native) — ESPHome **replacement firmware**: native Home Assistant over Wi-Fi with the stock QuietCool app still working via BLE, flashable in the browser, and reversible from HA. **A strong option if BLE pairing on newer firmware is giving you trouble** — no PhoneID pairing dance
 - [emerose/quietcool](https://github.com/emerose/quietcool) — Python BLE CLI tool; primary protocol reference
 - [alex-spyksma/quietcool](https://github.com/alex-spyksma/quietcool) — fork with additional command documentation
-- [awkaplan/quietcool-esphome](https://github.com/awkaplan/quietcool-esphome) — ESPHome firmware replacement (alternative approach, no stock BLE)
+- [snyamathi/quietcool](https://github.com/snyamathi/quietcool) — emerose fork adding firmware 3.9+/V2 support
+- [awkaplan/quietcool-esphome](https://github.com/awkaplan/quietcool-esphome) — earlier ESPHome firmware replacement (V1-era)
 - [stabbylambda/homeassistant-quietcool](https://github.com/stabbylambda/homeassistant-quietcool) — earlier HA integration attempt (cloud-based)
