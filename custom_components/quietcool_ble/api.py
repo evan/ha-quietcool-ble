@@ -213,18 +213,22 @@ async def login(client: BleakClient, phone_id: str) -> bool:
     return False
 
 
-async def pair_v1(client: BleakClient, phone_id: str) -> None:
+async def pair_v1(client: BleakClient, phone_id: str) -> str | None:
     """Send the legacy V1 Pair command. Registers the PhoneID on firmware < 3.9.
 
     This only sends the command — the caller must confirm the PhoneID actually
     persisted by logging in on a *fresh* connection. The controller ACKs a Pair
     command even when it does not store the PhoneID, so the ACK is not trusted.
+
+    Returns the Pair result string (`"Success"`, `"Fail"`, `"Beyond"` = the fan's
+    50-PhoneID memory is full), or None if there was no parseable response.
     """
     resp = await _send_command(client, {"Api": "Pair", "PhoneID": phone_id})
     _LOGGER.debug("QuietCool pair: V1 Pair response: %s", resp)
+    return resp.get("Result", resp.get("R"))
 
 
-async def pair_v2(client: BleakClient, phone_id: str) -> None:
+async def pair_v2(client: BleakClient, phone_id: str) -> str | None:
     """Send the V2 pair sequence (PairMode then Pair) for firmware 3.9+ / V4.x.
 
     The V2 Pair command is numeric code 14 with the PhoneID under the short key
@@ -232,6 +236,8 @@ async def pair_v2(client: BleakClient, phone_id: str) -> None:
     is confirmed on V4.1 hardware. Some V2 firmware also resets the BLE
     connection instead of replying to Pair, so a missing/failed response is not
     treated as fatal — the caller confirms with a fresh-connection login.
+
+    Returns the Pair result string (see pair_v1), or None on no response.
     """
     try:
         pm = await _send_command(client, {"A": ApiCode.PAIR_MODE})
@@ -242,9 +248,11 @@ async def pair_v2(client: BleakClient, phone_id: str) -> None:
     try:
         resp = await _send_command(client, {"A": ApiCode.PAIR, "P": phone_id})
         _LOGGER.debug("QuietCool pair: V2 Pair response: %s", resp)
+        return resp.get("Result", resp.get("R"))
     except TimeoutError:
         # V2 firmware may reset the connection instead of replying — expected.
         _LOGGER.debug("QuietCool pair: V2 Pair sent (no response — likely reset)")
+        return None
 
 
 async def get_fan_info(client: BleakClient) -> FanInfo:

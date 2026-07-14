@@ -24,7 +24,8 @@
       "cannot_connect": "Cannot connect to the fan over Bluetooth. Ensure the fan is powered on and within range.",
       "pair_failed": "Pairing failed. Press the Pair button on the fan controller first, then try again.",
       "invalid_phone_id": "That doesn't look like a valid Phone ID. Enter the exact ID (letters, numbers, and dashes).",
-      "login_failed": "The fan didn't accept that Phone ID. Make sure it's registered on this fan, or leave the field blank to pair a new one."
+      "login_failed": "The fan didn't accept that Phone ID. Make sure it's registered on this fan, or leave the field blank to pair a new one.",
+      "memory_full": "The fan's pairing memory is full (it stores up to 50 devices). Factory-reset the controller (QuietCool app → Fan Settings, or hold the Test/Speed button until it beeps), then try pairing again."
     },
     "abort": {
       "already_configured": "This fan is already configured.",

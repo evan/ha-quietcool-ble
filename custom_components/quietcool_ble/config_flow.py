@@ -225,15 +225,20 @@ class QuietCoolBLEConfigFlow(ConfigFlow, domain=DOMAIN):
             # Send the pairing command(s) on one connection. A dropped/reset
             # connection here is expected on some V2 firmware and is NOT fatal —
             # the fresh-connection login below is the real test of persistence.
+            pair_result: str | None = None
             try:
                 async with self._connect(device) as client:
-                    await send_pair(client, self._phone_id)
+                    pair_result = await send_pair(client, self._phone_id)
             except Exception:
                 _LOGGER.debug(
                     "QuietCool %s: pairing connection ended early (may be an "
                     "expected V2 reset); verifying anyway",
                     device.address,
                 )
+            if pair_result == "Beyond":
+                # The fan's PhoneID memory (50 max) is full — no pairing can
+                # persist until it's factory-reset.
+                return "memory_full"
 
             # Confirm persistence with a login on a fresh connection. A transient
             # connection error here is not fatal — fall through to the next method
@@ -350,7 +355,7 @@ class QuietCoolBLEConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_reauth(
         self, entry_data: Mapping[str, Any]
     ) -> ConfigFlowResult:
-        """Re-pair after PhoneID was overwritten by another client."""
+        """Re-pair after the fan stops accepting our PhoneID."""
         entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
         assert entry is not None
 
@@ -363,5 +368,9 @@ class QuietCoolBLEConfigFlow(ConfigFlow, domain=DOMAIN):
         if self._discovery_info is None:
             return self.async_abort(reason="device_not_found")
 
-        self._phone_id = _generate_phone_id()
+        # Reuse the existing PhoneID rather than generating a new one. Controllers
+        # store at most 50 PhoneIDs; re-registering the same id re-pairs without
+        # consuming another slot, so repeated re-pairs can't fill the table. The
+        # user can still type a different id on the pair form.
+        self._phone_id = entry.data.get(CONF_PHONE_ID) or _generate_phone_id()
         return await self.async_step_pair()
