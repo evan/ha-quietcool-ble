@@ -180,6 +180,12 @@ class FanParameters:
     timer_range: str   # fan speed for timer mode, "HIGH" or "LOW"
 
 
+@dataclass(frozen=True, slots=True)
+class LoginResult:
+    authenticated: bool
+    protocol: str
+
+
 class QuietCoolError(Exception):
     """Base error for QuietCool BLE protocol errors."""
 
@@ -202,15 +208,25 @@ async def login(client: BleakClient, phone_id: str) -> bool:
     Firmware 3.9+ accepts the V1 command body but responds with compact V2
     keys: {"A": 13, "R": "Success", "P": "No"}.
     """
+    return (await login_with_protocol(client, phone_id)).authenticated
+
+
+async def login_with_protocol(client: BleakClient, phone_id: str) -> LoginResult:
+    """Send Login and return both authentication result and detected protocol."""
     resp = await _send_command(client, {"Api": "Login", "PhoneID": phone_id})
     result = resp.get("Result", resp.get("R"))
     pair_state = resp.get("PairState", resp.get("P"))
+    protocol = (
+        ProtocolVersion.V2
+        if resp.get("A") == ApiCode.LOGIN or "R" in resp or "P" in resp
+        else ProtocolVersion.V1
+    )
     if result == "Success":
-        return True
+        return LoginResult(True, protocol)
     if pair_state is not None:
-        return False
+        return LoginResult(False, protocol)
     _LOGGER.warning("Unexpected login response: %s", resp)
-    return False
+    return LoginResult(False, protocol)
 
 
 async def pair_v1(client: BleakClient, phone_id: str) -> None:
@@ -310,19 +326,19 @@ async def get_work_state(client: BleakClient, protocol: str = ProtocolVersion.V1
     if unknown:
         _LOGGER.info("QuietCool GetWorkState unknown fields: %s", unknown)
 
-    raw_temp = resp.get("Temp_Sample")
-    raw_hum = resp.get("Humidity_Sample")
+    raw_temp = _coerce_number(resp.get("Temp_Sample"))
+    raw_hum = _coerce_number(resp.get("Humidity_Sample"))
     return FanState(
         mode=resp.get("Mode", FanMode.IDLE),
         range=resp.get("Range"),
         temp_fahrenheit=(
             raw_temp / 10
-            if isinstance(raw_temp, (int, float)) and 0 <= raw_temp <= 2000
+            if raw_temp is not None and 0 <= raw_temp <= 2000
             else None
         ),
         humidity_percent=(
             float(raw_hum)
-            if isinstance(raw_hum, (int, float)) and 0 <= raw_hum <= 100
+            if raw_hum is not None and 0 <= raw_hum <= 100
             else None
         ),
         sensor_state=resp.get("SensorState"),
@@ -488,6 +504,18 @@ def _normalize_v2_response(resp: dict, key_map: dict[str, str], api_name: str) -
     normalized = {field: resp[key] for key, field in key_map.items() if key in resp}
     normalized["Api"] = api_name
     return normalized
+
+
+def _coerce_number(value: object) -> float | None:
+    """Return a numeric response value, accepting numbers encoded as strings."""
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return None
+    return None
 
 
 # ---------------------------------------------------------------------------

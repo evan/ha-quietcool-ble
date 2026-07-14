@@ -369,7 +369,8 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
             _LOGGER.debug("QuietCool %s: BLE link up, authenticating", self.address)
             # Authenticate immediately after connecting
             try:
-                authenticated = await api.login(client, self.phone_id)
+                login_result = await api.login_with_protocol(client, self.phone_id)
+                authenticated = login_result.authenticated
             except Exception as err:
                 self._expected_disconnect = True
                 await client.disconnect()
@@ -404,6 +405,17 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
                 )
 
             self._auth_failures = 0
+            if login_result.protocol != self.fan_info.protocol:
+                _LOGGER.info(
+                    "QuietCool %s: protocol changed from %s to %s",
+                    self.address,
+                    self.fan_info.protocol,
+                    login_result.protocol,
+                )
+                self.fan_info = dataclasses.replace(
+                    self.fan_info,
+                    protocol=login_result.protocol,
+                )
             self._client = client
             self._reset_idle_timer()
             _LOGGER.debug("QuietCool %s: authenticated, ready to poll", self.address)
