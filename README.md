@@ -7,7 +7,7 @@ Native Bluetooth Low Energy integration for QuietCool attic and whole-house fans
 
 ## Status
 
-**Hardware-confirmed working** on the AFG SMT PRO-2.0 (firmware IT-BLT-ATTICFAN_V3.0). All 10 entities — fan control, smart mode, temperature, humidity, timers, and threshold configuration — verified on real hardware.
+**Hardware-confirmed working** on the AFG SMT PRO-2.0 (firmware V3.0) and on firmware 3.9+ / V4.1 controllers (e.g. the AFG SMT ES-3.0). All 10 entities — fan control, smart mode, temperature, humidity, timers, and threshold configuration — verified on real hardware.
 
 ## Supported Devices
 
@@ -126,7 +126,7 @@ Hold the Pair button on the wall control unit or controller board until the ligh
 
 TH mode lets the fan controller automatically turn the fan on and off based on attic temperature and humidity. The thresholds are stored on the device and persist across power cycles and HA restarts.
 
-The **Fan Speed** sensor shows whether the blades are actually spinning (`Off` / `Low` / `High`). In TH mode the fan entity shows as "on" (control mode is active), but Fan Speed will read `Off` whenever the current conditions haven't triggered it yet.
+The **Fan Speed** sensor shows whether the blades are actually spinning (`Off` / `Low` / `Medium` / `High`). In TH mode the fan entity shows as "on" (control mode is active), but Fan Speed will read `Off` whenever the current conditions haven't triggered it yet.
 
 Select **TH** from the Mode dropdown to activate it. Adjust the threshold number entities to match your comfort targets — changes take effect immediately without restarting the fan.
 
@@ -237,7 +237,7 @@ Restart HA, then reproduce the problem. Logs appear in **Settings → System →
 This integration communicates directly with your fan over Bluetooth Low Energy. Be aware:
 
 - **No link-layer encryption.** BLE communication is unencrypted — a firmware limitation that cannot be fixed in the integration.
-- **Single pairing credential.** The device stores one credential. Pairing another client overwrites it and breaks this integration.
+- **Shared access, no per-user auth.** The controller stores up to 50 pairing credentials (Phone IDs), so the QuietCool app and Home Assistant can both stay paired (only one connects at a time). Any BLE client within range that pairs can control the fan.
 
 For home use the risk profile is similar to any locally-controlled smart home device.
 
