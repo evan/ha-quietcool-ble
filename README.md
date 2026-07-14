@@ -203,8 +203,11 @@ automation:
 
 **Pairing failed:**
 - If using the physical button, **hold** it (don't just tap) until the light flashes, then click Submit in HA
-- If the fan is hard to reach, use the QuietCool app instead: tap your device → **Pair Mode**
+- If the fan is hard to reach, use the QuietCool app instead: tap your device → **Pair Mode** (this opens a longer, more reliable pairing window than the physical button)
 - On **firmware 3.9+ / V4.x** fans, pairing a *new* Phone ID can fail. If it does, enter an **existing Phone ID** (from a prior setup, an ESPHome config, or the QuietCool app) on the setup screen to skip pairing and just log in
+
+**Pairing is "acknowledged" but never persists (entities stay unavailable):**
+The controller stores a maximum of **50 Phone IDs**, and once that's full it will *acknowledge* a pair without actually storing it. Repeated pairing attempts can fill it up. Fix: **factory-reset the controller** to clear its pairing memory — via the QuietCool app (**Fan Settings**) or by holding the **Test/Speed** button on the controller until it beeps — then pair again. (Thanks to the community + [CrazyCoder's protocol docs](https://github.com/CrazyCoder/quietcool-esphome-native/blob/main/docs/OEM-BLE-PROTOCOL.md) for this one.)
 
 **Integration shows "unavailable" after setup:**
 - Power cycle the fan controller
@@ -285,6 +288,11 @@ Thresholds are written with `SetTempHumidity`. All six fields are required per p
 | [HA Community thread](https://community.home-assistant.io/t/quietcool-integration/913242) | Community reports and device compatibility |
 
 ## Changelog
+
+### v0.2.13
+- Fix: re-pairing now **reuses the existing Phone ID** instead of generating a new one each time. Controllers store at most **50** Phone IDs, so repeated re-pairs no longer risk filling that memory
+- Feat: if the fan's pairing memory is full (`R:"Beyond"`), setup now shows a clear "factory-reset the controller" message instead of a generic failure
+- Docs: new Troubleshooting note — pairing that's *acknowledged but never persists* usually means the 50-Phone-ID memory is full; factory-reset the controller to clear it. (This was the root cause of a firmware-4.1 pairing report — thanks to the community and [@CrazyCoder](https://github.com/CrazyCoder)'s protocol docs.)
 
 ### v0.2.12
 - Fix: reloading or removing the integration crashed with `AttributeError: 'super' object has no attribute 'async_stop'` — the base coordinator has no `async_stop()` (its teardown is registered via `async_on_unload`). Removed the bad `super()` call. This also unbreaks the reauth flow's reload step ([#8](https://github.com/rwarner/ha-quietcool-ble/issues/8))
