@@ -289,6 +289,10 @@ Thresholds are written with `SetTempHumidity`. All six fields are required per p
 
 ## Changelog
 
+### v0.2.14
+- Fix: the integration now detects the fan's protocol (V1/V2) from the **login response** and corrects it at runtime. This fixes existing setups whose stored protocol was stale or mis-detected (e.g. after a firmware update) — the fan would connect fine but every sensor read "unavailable" because firmware 3.9+ silently ignores V1 poll commands. Thanks [@DillonBrown](https://github.com/DillonBrown) ([#9](https://github.com/rwarner/ha-quietcool-ble/pull/9))
+- Fix: temperature/humidity samples that arrive encoded as strings are now parsed correctly (defensive numeric coercion)
+
 ### v0.2.13
 - Fix: re-pairing now **reuses the existing Phone ID** instead of generating a new one each time. Controllers store at most **50** Phone IDs, so repeated re-pairs no longer risk filling that memory
 - Feat: if the fan's pairing memory is full (`R:"Beyond"`), setup now shows a clear "factory-reset the controller" message instead of a generic failure
