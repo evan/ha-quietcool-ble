@@ -17,6 +17,13 @@ KEEP_ALIVE_SECONDS: Final = 60   # idle BLE connection timeout before voluntary 
 COMMAND_TIMEOUT: Final = 10.0    # seconds per BLE round-trip
 MAX_RECV_BUFFER: Final = 1024    # bytes; all real responses are <200 bytes
 MAX_CONNECT_ATTEMPTS: Final = 2  # per establish_connection call; fast-fail, coordinator backsoff
+# Bound every BLE disconnect: BleakClient.disconnect() can hang forever when the
+# BlueZ D-Bus connection wedges, which used to hold _connect_lock and freeze the
+# integration until HA restarted (issue #10). Our dependency bleak_retry_connector
+# guards its own D-Bus calls the same way (its DISCONNECT_TIMEOUT = 5); we keep a
+# local constant rather than importing theirs so a version without that symbol
+# can't ImportError the whole integration at load time.
+DISCONNECT_TIMEOUT: Final = 5.0
 
 # Config entry data keys
 CONF_PHONE_ID: Final = "phone_id"

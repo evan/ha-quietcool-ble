@@ -201,7 +201,9 @@ class QuietCoolBLEConfigFlow(ConfigFlow, domain=DOMAIN):
         try:
             yield client
         finally:
-            await client.disconnect()
+            # Bounded: an unbounded disconnect() on a wedged D-Bus would hang the
+            # pairing dialog indefinitely (same hazard as issue #10).
+            await api.safe_disconnect(client, device.address)
 
     async def _attempt_pair(self) -> str:
         """Pair the device, confirming each attempt on a fresh connection.

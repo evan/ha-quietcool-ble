@@ -33,7 +33,7 @@ from enum import IntEnum, StrEnum
 
 from bleak import BleakClient
 
-from .const import CHAR_UUID, COMMAND_TIMEOUT, MAX_RECV_BUFFER
+from .const import CHAR_UUID, COMMAND_TIMEOUT, DISCONNECT_TIMEOUT, MAX_RECV_BUFFER
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -201,6 +201,31 @@ class UnsupportedProtocolError(QuietCoolError):
 # ---------------------------------------------------------------------------
 # Public API — protocol-transparent
 # ---------------------------------------------------------------------------
+
+async def safe_disconnect(client: BleakClient, label: str = "") -> None:
+    """Disconnect a BLE client with a bounded timeout. Never raises.
+
+    BleakClient.disconnect() can hang forever when the BlueZ D-Bus connection
+    wedges (issue #10) — and an unbounded disconnect while holding the
+    coordinator's _connect_lock froze the integration until HA was restarted.
+    Every disconnect in this integration must go through here.
+    """
+    try:
+        await asyncio.wait_for(client.disconnect(), timeout=DISCONNECT_TIMEOUT)
+    except asyncio.TimeoutError:
+        _LOGGER.warning(
+            "QuietCool %s: BLE disconnect did not complete within %.0fs; "
+            "abandoning the connection",
+            label or client.address,
+            DISCONNECT_TIMEOUT,
+        )
+    except Exception as err:  # noqa: BLE001 — teardown must never raise
+        _LOGGER.debug(
+            "QuietCool %s: error during BLE disconnect (ignored): %s",
+            label or client.address,
+            err,
+        )
+
 
 async def login(client: BleakClient, phone_id: str) -> bool:
     """Send Login. Returns True if authenticated, False if pairing needed.
@@ -602,17 +627,25 @@ async def _send_command(client: BleakClient, payload: dict) -> dict:
                 len(recv_buffer),
             )
 
-    # Register notify BEFORE writing
+    # Register notify BEFORE writing.
+    # Every GATT call here is wrapped in wait_for: on a wedged BLE transport these
+    # can hang forever, and they run under the coordinator's _operation_lock — an
+    # unbounded hang there froze all polling until HA restarted (issue #10).
     _LOGGER.debug("QuietCool BLE %s: registering notify", cmd_label)
-    await client.start_notify(CHAR_UUID, handle_notify)
+    await asyncio.wait_for(
+        client.start_notify(CHAR_UUID, handle_notify), timeout=COMMAND_TIMEOUT
+    )
     try:
         raw = json.dumps(payload).encode("utf-8")
         _LOGGER.debug("QuietCool BLE %s → %s", cmd_label, raw.decode())
         char = client.services.get_characteristic(CHAR_UUID)
         chunk_size = char.max_write_without_response_size
         for i in range(0, len(raw), chunk_size):
-            await client.write_gatt_char(
-                CHAR_UUID, raw[i : i + chunk_size], response=True
+            await asyncio.wait_for(
+                client.write_gatt_char(
+                    CHAR_UUID, raw[i : i + chunk_size], response=True
+                ),
+                timeout=COMMAND_TIMEOUT,
             )
         resp = await asyncio.wait_for(response_queue.get(), timeout=COMMAND_TIMEOUT)
         return resp
@@ -628,4 +661,13 @@ async def _send_command(client: BleakClient, payload: dict) -> dict:
             f"No BLE response to '{cmd_label}' within {COMMAND_TIMEOUT}s"
         ) from err
     finally:
-        await client.stop_notify(CHAR_UUID)
+        # Bounded and swallowed: this runs on every command including the timeout
+        # path, and a raising stop_notify would MASK the in-flight TimeoutError.
+        try:
+            await asyncio.wait_for(
+                client.stop_notify(CHAR_UUID), timeout=COMMAND_TIMEOUT
+            )
+        except Exception as err:  # noqa: BLE001 — teardown must never mask/raise
+            _LOGGER.debug(
+                "QuietCool BLE %s: stop_notify failed (ignored): %s", cmd_label, err
+            )
