@@ -99,6 +99,7 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         self._consecutive_failures = 0
         self._auth_failures = 0
         self._reauth_in_progress = False
+        self._closing = False
 
     # ------------------------------------------------------------------
     # Poll scheduling
@@ -155,6 +156,26 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
             return POLL_INTERVAL_SECONDS
         backoff = POLL_INTERVAL_SECONDS * (2**self._consecutive_failures)
         return min(backoff, 300.0)  # cap at 5 minutes
+
+    async def async_request_refresh(self) -> None:
+        """Poll on demand (homeassistant.update_entity / CoordinatorEntity).
+
+        ActiveBluetoothDataUpdateCoordinator has no async_request_refresh(), but
+        every entity here is a CoordinatorEntity whose async_update() calls it —
+        so `homeassistant.update_entity` raised AttributeError (issue #10).
+
+        Calls _async_poll() directly rather than the base's private debouncer:
+        depending on private base attrs is what caused the original AttributeError,
+        and the debouncer is the component that wedges — going through it would
+        inherit the freeze instead of giving users a manual unstick lever.
+        """
+        if self._poll_task is not None and not self._poll_task.done():
+            _LOGGER.debug(
+                "QuietCool %s: refresh requested, poll already in flight",
+                self.address,
+            )
+            return
+        await self._async_poll()
 
     async def _async_poll(self, service_info: BluetoothServiceInfoBleak | None = None) -> None:
         """Perform one poll cycle: connect, login, GetWorkState, disconnect (or keep-alive)."""
@@ -281,14 +302,48 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
             client = await self._ensure_connected()
             async with self._operation_lock:
                 await operation(client)
-        except TimeoutError as err:
-            raise UpdateFailed(str(err)) from err
-        except (UpdateFailed, ConfigEntryAuthFailed):
-            # ConfigEntryAuthFailed must NOT be masked as UpdateFailed — the poll
-            # loop needs to see it to hand off to the reauth flow.
+        except ConfigEntryAuthFailed:
+            # _ensure_connected already tore the connection down. Must NOT be
+            # masked as UpdateFailed — the poll loop needs it for the reauth flow.
             raise
+        except UpdateFailed:
+            await self._async_drop_client()
+            raise
+        except TimeoutError as err:
+            await self._async_drop_client()
+            raise UpdateFailed(str(err)) from err
         except Exception as err:
+            await self._async_drop_client()
             raise UpdateFailed(f"BLE operation failed: {err}") from err
+
+    async def _async_drop_client(self) -> None:
+        """Tear down the connection after a failed BLE operation.
+
+        is_connected is a *cached* property (BlueZ D-Bus property cache / ESPHome
+        _is_connected), so on a wedged transport it stays True forever and
+        _handle_disconnect never fires. _ensure_connected's lock-free fast path
+        would then hand the same dead client to every future poll, for ever
+        (issue #10). Dropping it forces the next poll onto the slow path, which
+        builds a fresh connection.
+
+        Drops on *any* failure: sniffing "dead transport" vs "transient" by
+        exception type is fragile and would leave the hole open. The cost is one
+        extra reconnect per real failure, which is already routine (the fan drops
+        idle links every ~25s).
+        """
+        async with self._connect_lock:
+            client = self._client
+            self._client = None
+            if client is not None:
+                self._expected_disconnect = True
+            # No connection left to idle out. A stale idle timer would otherwise
+            # fire later and re-arm the poll timer, pushing the pending backoff
+            # poll out by up to one interval. (_handle_disconnect does the same.)
+            if self._idle_timer_handle:
+                self._idle_timer_handle.cancel()
+                self._idle_timer_handle = None
+        if client is not None:
+            await api.safe_disconnect(client, self.address)
 
     # ------------------------------------------------------------------
     # Connection lifecycle — led_ble dual-lock pattern
@@ -373,7 +428,7 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
                 authenticated = login_result.authenticated
             except Exception as err:
                 self._expected_disconnect = True
-                await client.disconnect()
+                await api.safe_disconnect(client, self.address)
                 raise UpdateFailed(f"BLE login error: {err}") from err
 
             _LOGGER.debug(
@@ -381,7 +436,7 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
             )
             if not authenticated:
                 self._expected_disconnect = True
-                await client.disconnect()
+                await api.safe_disconnect(client, self.address)
                 self._auth_failures += 1
                 # A single login=False can be a transient/garbled BLE read, so we
                 # retry (UpdateFailed → backoff) a few times before concluding the
@@ -431,7 +486,20 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         IMPORTANT: Does NOT cancel asyncio.all_tasks(). The upstream
         emerose/quietcool library does this, which would crash HA. We cancel
         only our own _poll_task.
+
+        Safe to mutate _client without the lock: this is a sync callback and runs
+        atomically on the event loop between awaits.
         """
+        # Only honour callbacks from the client we currently hold. Teardown now
+        # disconnects outside _connect_lock, so a *new* client can already exist
+        # when an old client's callback fires late — without this check it would
+        # null the live connection and cancel the live poll task.
+        if self._client is not None and client is not self._client:
+            _LOGGER.debug(
+                "QuietCool %s: ignoring disconnect from a stale BLE client",
+                self.address,
+            )
+            return
         if self._expected_disconnect:
             return
         if self._client is None:
@@ -457,6 +525,8 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         Instead, we self-schedule: poll → device idles and disconnects → timer
         fires → reconnect → poll → repeat.
         """
+        if self._closing:
+            return
         if self._poll_timer_handle is not None:
             self._poll_timer_handle.cancel()
         interval = self._poll_interval()
@@ -470,6 +540,8 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
 
     def _reset_idle_timer(self) -> None:
         """Reset the idle-disconnect timer to KEEP_ALIVE_SECONDS from now."""
+        if self._closing:
+            return
         if self._idle_timer_handle:
             self._idle_timer_handle.cancel()
         self._idle_timer_handle = self.hass.loop.call_later(
@@ -480,26 +552,43 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         self.hass.async_create_task(self._async_idle_disconnect())
 
     async def _async_idle_disconnect(self) -> None:
-        """Voluntarily close an idle BLE connection to free the adapter slot."""
+        """Voluntarily close an idle BLE connection to free the adapter slot.
+
+        Detaches the client *under* _connect_lock, then disconnects *outside* it.
+        A wedged disconnect must never hold _connect_lock: that blocked every
+        future connect AND hung async_stop(), so unload/reload could never
+        complete and only an HA restart recovered (issue #10).
+
+        Teardown is unconditional — no `is_connected` guard. The client is always
+        cleared and a poll timer is always armed, because a client that reports
+        not-connected still has to be dropped and polling still has to resume.
+        (Same bug class as v0.2.2 / v0.2.4, which only fixed narrower paths.)
+        """
+        # Non-blocking check: don't yank the connection out from under an in-flight
+        # GATT op. Never *await* _operation_lock here — that would re-introduce the
+        # very wedge this function is being fixed for.
+        if self._operation_lock.locked() and not self._closing:
+            _LOGGER.debug(
+                "QuietCool %s: BLE op in flight, deferring idle disconnect",
+                self.address,
+            )
+            self._reset_idle_timer()
+            return
+
         async with self._connect_lock:
-            if self._client is not None and self._client.is_connected:
+            client = self._client
+            self._client = None
+            if client is not None:
                 self._expected_disconnect = True
-                try:
-                    await self._client.disconnect()
-                except Exception as err:  # noqa: BLE001
-                    _LOGGER.debug(
-                        "QuietCool %s: error during idle disconnect (ignored): %s",
-                        self.address,
-                        err,
-                    )
-                finally:
-                    self._client = None
-                    _LOGGER.debug(
-                        "QuietCool %s: idle disconnect (%.0fs timeout)",
-                        self.address,
-                        KEEP_ALIVE_SECONDS,
-                    )
-                    self._schedule_poll_timer()
+
+        if client is not None:
+            await api.safe_disconnect(client, self.address)
+            _LOGGER.debug(
+                "QuietCool %s: idle disconnect (%.0fs timeout)",
+                self.address,
+                KEEP_ALIVE_SECONDS,
+            )
+        self._schedule_poll_timer()
 
     async def async_stop(self) -> None:
         """Cancel in-flight poll and close any open BLE connection.
@@ -510,7 +599,13 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         our own poll task, timers, and BLE connection here — calling
         super().async_stop() raised AttributeError and broke every unload/reload
         (and the reauth flow's reload). See issue #8.
+
+        _closing is set FIRST so nothing can re-arm a timer behind us: previously
+        we cancelled _poll_timer_handle and then _async_idle_disconnect re-armed
+        it, leaking a timer that fired _async_poll() on a dead coordinator and
+        raced the new one on reload.
         """
+        self._closing = True
         if self._poll_task and not self._poll_task.done():
             self._poll_task.cancel()
             try:
