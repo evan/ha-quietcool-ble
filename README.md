@@ -289,6 +289,13 @@ Thresholds are written with `SetTempHumidity`. All six fields are required per p
 
 ## Changelog
 
+### v0.2.15
+- Fix: the integration could **freeze permanently** — entities stopped updating and only a full Home Assistant restart recovered (a reload didn't). When the Bluetooth transport wedged (typically BlueZ/D-Bus, logging `EOFError` / `Bad file descriptor`), unbounded BLE calls never returned: a `disconnect()` held the connection lock forever, which also hung unload/reload. Every BLE call is now bounded by a timeout, disconnects never hold the lock, and a failed connection is dropped so the next poll reconnects instead of reusing a dead one. The integration now recovers on its own ([#10](https://github.com/rwarner/ha-quietcool-ble/issues/10))
+- Fix: `homeassistant.update_entity` raised `AttributeError: ... has no attribute 'async_request_refresh'`. Manual refresh now works and triggers a real poll ([#10](https://github.com/rwarner/ha-quietcool-ble/issues/10))
+- Fix: unloading the integration left a stray poll timer armed, which could fire against a dead coordinator and race the new one during a reload
+
+Thanks [@romanmodin](https://github.com/romanmodin) for the detailed report.
+
 ### v0.2.14
 - Fix: the integration now detects the fan's protocol (V1/V2) from the **login response** and corrects it at runtime. This fixes existing setups whose stored protocol was stale or mis-detected (e.g. after a firmware update) — the fan would connect fine but every sensor read "unavailable" because firmware 3.9+ silently ignores V1 poll commands. Thanks [@DillonBrown](https://github.com/DillonBrown) ([#9](https://github.com/rwarner/ha-quietcool-ble/pull/9))
 - Fix: temperature/humidity samples that arrive encoded as strings are now parsed correctly (defensive numeric coercion)
