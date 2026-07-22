@@ -15,11 +15,14 @@ Native Bluetooth Low Energy integration for QuietCool attic and whole-house fans
 |---|---|---|---|---|
 | AFG SMT PRO-2.0 Smart Attic Fan | 1945 | Low / High | `ATTICFAN_*` | ✅ Hardware confirmed (firmware V3.0) |
 | AFG SMT ES-3.0 | 2801 | Low / Med† / High | `ATTICFAN_*` | ✅ Hardware confirmed (firmware V4.1) |
+| QC ES-3100 Whole House Fan‡ | 3081 | Low / High | `ATTICFAN_*` | ✅ Hardware confirmed (firmware V4.1) |
 | AFG SMT ES-2.0 | Various | Low / High | `ATTICFAN_*` | 🔲 Protocol confirmed, untested |
 | AFG SMT NR-A (2022 revision) | Various | Low / High | `ATTICFAN_*` | 🔲 Protocol confirmed, untested |
 | Other ESP32-based QuietCool controllers | Various | Unknown | `ATTICFAN_*` | 🔲 Untested |
 
 All supported controllers advertise over BLE with a name beginning with `ATTICFAN`.
+
+> ‡ **Whole house fans** work too, as long as they're driven by a QuietCool **Smart Attic Fan Controller**. The integration talks to the controller, not the fan, so any fan wired to a supported controller should work — the QC ES-3100 is the first confirmed whole-house setup ([#11](https://github.com/rwarner/ha-quietcool-ble/issues/11)).
 
 > † **Medium speed** is offered automatically on 3-speed fans — the integration shows it only when the firmware reports a 3-speed type (`FanType: THREE`), so 2-speed fans are unaffected. Hardware-confirmed on the AFG SMT ES-3.0 (firmware V4.1) ([#4](https://github.com/rwarner/ha-quietcool-ble/issues/4)).
 
