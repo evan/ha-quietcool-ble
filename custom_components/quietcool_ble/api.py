@@ -219,12 +219,32 @@ async def safe_disconnect(client: BleakClient, label: str = "") -> None:
             label or client.address,
             DISCONNECT_TIMEOUT,
         )
+        _force_close_bus(client)
     except Exception as err:  # noqa: BLE001 — teardown must never raise
         _LOGGER.debug(
             "QuietCool %s: error during BLE disconnect (ignored): %s",
             label or client.address,
             err,
         )
+        _force_close_bus(client)
+
+
+def _force_close_bus(client: BleakClient) -> None:
+    """Force-close a BleakClient's D-Bus bus to prevent connection leak.
+
+    Bleak's _cleanup_all() does not close the per-client D-Bus MessageBus when
+    the BLE device disconnects on its own, leaking one Unix socket to dbus-daemon
+    per reconnect cycle.  This reaches into Bleak internals as a last resort when
+    the normal disconnect() path fails or was never called.
+    """
+    try:
+        backend = getattr(client, "_backend", None)
+        bus = getattr(backend, "_bus", None) if backend else None
+        if bus is not None:
+            bus.disconnect()
+            _LOGGER.debug("QuietCool: force-closed leaked D-Bus bus")
+    except Exception:  # noqa: BLE001 — best-effort cleanup
+        pass
 
 
 async def login(client: BleakClient, phone_id: str) -> bool:
