@@ -38,6 +38,7 @@ from homeassistant.helpers.update_coordinator import UpdateFailed
 from . import api
 from .api import FanInfo, FanParameters, FanState, FanVersion
 from .const import (
+    DISCONNECT_TIMEOUT,
     KEEP_ALIVE_SECONDS,
     MAX_CONNECT_ATTEMPTS,
     POLL_INTERVAL_SECONDS,
@@ -514,8 +515,26 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
             self._idle_timer_handle = None
         if self._poll_task and not self._poll_task.done():
             self._poll_task.cancel()
+        # Close the old client's D-Bus bus to prevent dbus-daemon connection leak.
+        # Bleak's _cleanup_all() fires on unsolicited BLE disconnects but does not
+        # close the per-client D-Bus MessageBus, leaking one connection per cycle.
+        self.hass.async_create_task(self._async_close_stale_client(client))
         # Schedule next poll — device returns to advertising mode after disconnect
         self._schedule_poll_timer()
+
+    async def _async_close_stale_client(self, client: BleakClient) -> None:
+        """Close a stale BleakClient's D-Bus bus after device-initiated disconnect.
+
+        Bleak's _cleanup_all() fires on unsolicited BLE disconnects but does not
+        close the per-client D-Bus MessageBus, leaking one dbus-daemon connection
+        per BLE reconnect cycle.  Calling disconnect() on an already-disconnected
+        client is safe — Bleak skips the BLE teardown and goes straight to
+        bus.disconnect().
+        """
+        try:
+            await asyncio.wait_for(client.disconnect(), timeout=DISCONNECT_TIMEOUT)
+        except Exception:  # noqa: BLE001
+            api._force_close_bus(client)
 
     def _schedule_poll_timer(self) -> None:
         """Schedule a timer-driven poll for after device disconnects.
