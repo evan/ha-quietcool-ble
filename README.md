@@ -320,7 +320,7 @@ Two protocol versions exist depending on firmware:
 
 Full release history is in [CHANGELOG.md](CHANGELOG.md). Most recent release:
 
-**v0.2.15** — fixes a permanent freeze when the Bluetooth transport wedged (entities stopped updating until a full HA restart); every BLE call is now bounded by a timeout and the integration recovers on its own. Also fixes `homeassistant.update_entity` and a stray poll timer left armed after unload ([#10](https://github.com/rwarner/ha-quietcool-ble/issues/10)).
+**v0.2.16** — fixes a D-Bus connection leak that could permanently kill Bluetooth after a few hours (`Bad file descriptor` / `EOFError`, recovers only on a full HA restart). The integration now closes Bleak's per-connection D-Bus bus when the fan drops the link. Thanks [@brian316](https://github.com/brian316) ([#13](https://github.com/rwarner/ha-quietcool-ble/pull/13)).
 
 ## Related Projects
 
