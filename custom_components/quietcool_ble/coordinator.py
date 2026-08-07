@@ -38,7 +38,6 @@ from homeassistant.helpers.update_coordinator import UpdateFailed
 from . import api
 from .api import FanInfo, FanParameters, FanState, FanVersion
 from .const import (
-    DISCONNECT_TIMEOUT,
     KEEP_ALIVE_SECONDS,
     MAX_CONNECT_ATTEMPTS,
     POLL_INTERVAL_SECONDS,
@@ -529,12 +528,10 @@ class QuietCoolBLECoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         close the per-client D-Bus MessageBus, leaking one dbus-daemon connection
         per BLE reconnect cycle.  Calling disconnect() on an already-disconnected
         client is safe — Bleak skips the BLE teardown and goes straight to
-        bus.disconnect().
+        bus.disconnect(). safe_disconnect bounds it and force-closes the bus if
+        disconnect() times out or raises.
         """
-        try:
-            await asyncio.wait_for(client.disconnect(), timeout=DISCONNECT_TIMEOUT)
-        except Exception:  # noqa: BLE001
-            api._force_close_bus(client)
+        await api.safe_disconnect(client, self.address)
 
     def _schedule_poll_timer(self) -> None:
         """Schedule a timer-driven poll for after device disconnects.
