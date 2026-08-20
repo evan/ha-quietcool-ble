@@ -20,7 +20,7 @@ Native Bluetooth Low Energy integration for QuietCool attic and whole-house fans
 | AFG SMT NR-A (2022 revision) | Various | Low / High | `ATTICFAN_*` | 🔲 Protocol confirmed, untested |
 | Other ESP32-based QuietCool controllers | Various | Unknown | `ATTICFAN_*` | 🔲 Untested |
 
-All supported controllers advertise over BLE with a name beginning with `ATTICFAN`.
+All supported controllers advertise over BLE with a name beginning with `ATTICFAN`. Some revisions omit the BLE local name and instead advertise the raw manufacturer-specific signature `3atticfan` (company ID `0x6133`, payload prefix `tticfan`); these are recognized too and show as `QuietCool Fan (<address>)` until their real name is read over GATT.
 
 > ‡ **Whole house fans** work too, as long as they're driven by a QuietCool **Smart Attic Fan Controller**. The integration talks to the controller, not the fan, so any fan wired to a supported controller should work — the QC ES-3100 is the first confirmed whole-house setup ([#11](https://github.com/rwarner/ha-quietcool-ble/issues/11)).
 
@@ -319,6 +319,8 @@ Two protocol versions exist depending on firmware:
 ## Changelog
 
 Full release history is in [CHANGELOG.md](CHANGELOG.md). Most recent release:
+
+**v0.2.17** — also discovers controllers that omit the BLE local name and advertise the `3atticfan` manufacturer-data signature instead, so those name-less revisions auto-discover and appear in the manual picker. Thanks [@viss](https://github.com/viss/ha-quietcool-ble) for reverse-engineering the variant.
 
 **v0.2.16** — fixes a D-Bus connection leak that could permanently kill Bluetooth after a few hours (`Bad file descriptor` / `EOFError`, recovers only on a full HA restart). The integration now closes Bleak's per-connection D-Bus bus when the fan drops the link. Thanks [@brian316](https://github.com/brian316) ([#13](https://github.com/rwarner/ha-quietcool-ble/pull/13)).
 

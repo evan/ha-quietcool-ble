@@ -1,5 +1,9 @@
 # Changelog
 
+### v0.2.17
+- Feat: **discover name-less controllers.** Some controller revisions omit the BLE local name and advertise the manufacturer-specific signature `3atticfan` instead (BlueZ shows only the MAC). The integration now also matches this signature (`manufacturer_id` `0x6133`, payload prefix `tticfan`) alongside the normal `ATTICFAN*` name, so these fans auto-discover and appear in the manual picker; when only the MAC is known they show as `QuietCool Fan (<address>)` until the real name is read over GATT. Thanks [@viss](https://github.com/viss/ha-quietcool-ble) for reverse-engineering the manufacturer-data variant
+- Minor: new setups now title the device from the name read over GATT (consistent with the fan-name entity), instead of the raw BLE advertisement name; existing entries are unchanged
+
 ### v0.2.16
 - Fix: a **D-Bus connection leak** that could permanently kill Bluetooth after a few hours. Bleak does not close its per-connection D-Bus bus when the fan drops the BLE link on its own (its `_cleanup_all()` skips the bus close), leaking one dbus-daemon socket per reconnect cycle. Because the controller drops idle connections every ~25s, a busy setup hits the dbus default `max_connections_per_user=256` in ~1.7 hours — after which every Bluetooth connection is rejected (`[Errno 9] Bad file descriptor`, `EOFError`) and only a full Home Assistant restart recovers. The integration now closes the stale client's bus on a device-initiated disconnect, and force-closes it as a fallback if `disconnect()` times out. Thanks [@brian316](https://github.com/brian316) for the detailed root-cause trace and fix ([#13](https://github.com/rwarner/ha-quietcool-ble/pull/13))
 - This may also be the underlying cause of [#10](https://github.com/rwarner/ha-quietcool-ble/issues/10), which reported the same symptom fingerprint (`Bad file descriptor` / `EOFError`, advertisements still arriving, recovers only on a full restart)

@@ -10,6 +10,12 @@ PLATFORMS: Final = ["fan", "sensor", "select", "number"]
 SERVICE_UUID: Final = "000000ff-0000-1000-8000-00805f9b34fb"
 CHAR_UUID: Final = "0000ff01-0000-1000-8000-00805f9b34fb"
 BLE_NAME_PREFIX: Final = "ATTICFAN"
+# Some controller revisions omit the BLE local name and instead advertise the
+# bytes ``3atticfan`` as manufacturer-specific data. BLE consumes the leading
+# little-endian ``3a`` as company ID 0x6133, leaving ``tticfan`` as the payload.
+# Discovery matches this signature so those name-less controllers still appear.
+BLE_MANUFACTURER_ID: Final = 0x6133
+BLE_MANUFACTURER_PREFIX: Final = b"tticfan"
 
 # Polling and connection
 POLL_INTERVAL_SECONDS: Final = 10

@@ -1,7 +1,7 @@
 """Config flow for QuietCool BLE integration.
 
 Flow steps:
-  bluetooth    → auto-triggered when ATTICFAN* advertisement seen
+  bluetooth    → auto-triggered by a known QuietCool advertisement
   bluetooth_confirm → user confirms the device (confirm-only; PhoneID auto-generated)
   pair         → pair the fan, OR reuse an existing PhoneID to skip pairing
   user         → manual fallback when no auto-discovery is available
@@ -35,7 +35,6 @@ from homeassistant.const import CONF_ADDRESS
 from . import api
 from .api import ProtocolVersion
 from .const import (
-    BLE_NAME_PREFIX,
     CONF_FAN_MODEL,
     CONF_FAN_NAME,
     CONF_FAN_SERIAL,
@@ -44,6 +43,7 @@ from .const import (
     DOMAIN,
     MAX_CONNECT_ATTEMPTS,
 )
+from .discovery import is_quietcool_advertisement, quietcool_display_name
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -82,13 +82,13 @@ class QuietCoolBLEConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_bluetooth(
         self, discovery_info: BluetoothServiceInfoBleak
     ) -> ConfigFlowResult:
-        """Called automatically when an ATTICFAN* advertisement is seen."""
+        """Called automatically when a known QuietCool advertisement is seen."""
         await self.async_set_unique_id(discovery_info.address)
         self._abort_if_unique_id_configured()
 
         self._discovery_info = discovery_info
         self.context["title_placeholders"] = {
-            "name": discovery_info.name,
+            "name": quietcool_display_name(discovery_info),
             "address": discovery_info.address,
         }
         return await self.async_step_bluetooth_confirm()
@@ -107,7 +107,7 @@ class QuietCoolBLEConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="bluetooth_confirm",
             description_placeholders={
-                "name": self._discovery_info.name,
+                "name": quietcool_display_name(self._discovery_info),
                 "address": self._discovery_info.address,
             },
         )
@@ -156,7 +156,7 @@ class QuietCoolBLEConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
             data_schema=vol.Schema({vol.Optional(CONF_PHONE_ID): str}),
             description_placeholders={
-                "name": self._discovery_info.name,
+                "name": quietcool_display_name(self._discovery_info),
                 "address": self._discovery_info.address,
             },
         )
@@ -301,13 +301,14 @@ class QuietCoolBLEConfigFlow(ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="reauth_successful")
 
         fan_info = self.context.get("fan_info")
+        fallback_name = quietcool_display_name(self._discovery_info)
 
         return self.async_create_entry(
-            title=self._discovery_info.name,
+            title=fan_info.name if fan_info else fallback_name,
             data={
                 CONF_ADDRESS: self._discovery_info.address,
                 CONF_PHONE_ID: self._phone_id,
-                CONF_FAN_NAME: fan_info.name if fan_info else self._discovery_info.name,
+                CONF_FAN_NAME: fan_info.name if fan_info else fallback_name,
                 CONF_FAN_MODEL: fan_info.model if fan_info else "",
                 CONF_FAN_SERIAL: fan_info.serial if fan_info else "",
                 CONF_PROTOCOL: fan_info.protocol if fan_info else ProtocolVersion.V1,
@@ -321,12 +322,18 @@ class QuietCoolBLEConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Manual setup: show list of discovered ATTICFAN* devices."""
-        discovered_devices = {
-            info.address: f"{info.name} ({info.address})"
-            for info in async_discovered_service_info(self.hass)
-            if info.name and info.name.startswith(BLE_NAME_PREFIX)
-        }
+        """Manual setup: show all discovered QuietCool advertisement variants."""
+        # Always disambiguate by address — users often have several ATTICFAN fans,
+        # which advertise identical names. quietcool_display_name() already appends
+        # the address for name-less controllers, so only add it when absent.
+        discovered_devices: dict[str, str] = {}
+        for info in async_discovered_service_info(self.hass):
+            if not is_quietcool_advertisement(info):
+                continue
+            label = quietcool_display_name(info)
+            if info.address not in label:
+                label = f"{label} ({info.address})"
+            discovered_devices[info.address] = label
 
         if not discovered_devices:
             return self.async_abort(reason="no_devices_found")
