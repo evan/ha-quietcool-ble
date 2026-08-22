@@ -86,9 +86,8 @@ class QuietCoolModeSelectEntity(
         elif option == FanMode.TIMER:
             # Use device's stored timer defaults; fall back to 8h LOW if not yet fetched
             params = self.coordinator.fan_parameters
-            hours = params.timer_hour if params else 8
-            minutes = params.timer_minute if params else 0
-            speed = params.timer_range if params else FanSpeed.LOW
+            hours, minutes = api.resolve_timer_duration(params)
+            speed = params.timer_range if params is not None else FanSpeed.LOW
             await self.coordinator.async_execute(
                 lambda client: api.set_mode_timer(
                     client, speed, hours, minutes, protocol=protocol

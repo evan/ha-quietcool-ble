@@ -140,6 +140,12 @@ If you don't have one of those, ignore the field and pair normally. Any string o
 | Medium Temp Threshold | `number` | °F | 2-speed fans switch LOW→HIGH above this |
 | Low Temp Threshold | `number` | °F | TH mode deactivates below this |
 | High Humidity Threshold | `number` | % | TH mode activates above this |
+| Timer Hours | `number` | h | Timer-mode run duration (0–23); setting it doesn't start the fan |
+| Timer Minutes | `number` | min | Timer-mode run duration (0–59); setting it doesn't start the fan |
+
+## Timer Duration
+
+The **Timer Hours** and **Timer Minutes** number entities set how long the fan runs when it's in Timer mode. They write only the stored duration (via `SetTime`) — changing them does **not** turn the fan on. When you next turn the fan on (or switch Mode to `Timer`), it counts down from this duration instead of the firmware's 8-hour default.
 
 ## Smart Mode (TH)
 
@@ -319,6 +325,8 @@ Two protocol versions exist depending on firmware:
 ## Changelog
 
 Full release history is in [CHANGELOG.md](CHANGELOG.md). Most recent release:
+
+**v0.2.18** — set the timer duration from Home Assistant: new **Timer Hours** / **Timer Minutes** number entities, and turn-on now honors that duration instead of forcing the firmware's 8-hour default ([#15](https://github.com/rwarner/ha-quietcool-ble/issues/15)).
 
 **v0.2.17** — also discovers controllers that omit the BLE local name and advertise the `3atticfan` manufacturer-data signature instead, so those name-less revisions auto-discover and appear in the manual picker. Thanks [@viss](https://github.com/viss/ha-quietcool-ble) for reverse-engineering the variant.
 

@@ -467,14 +467,20 @@ async def set_mode_idle(client: BleakClient, protocol: str = ProtocolVersion.V1)
     await _send_command(client, {"Api": "SetMode", "Mode": FanMode.IDLE})
 
 
-async def set_mode_timer(
+async def set_timer(
     client: BleakClient,
     speed: str,
     hours: int = 8,
     minutes: int = 0,
     protocol: str = ProtocolVersion.V1,
 ) -> None:
-    """Turn the fan on at the given speed for the given duration."""
+    """Save the timer duration and speed WITHOUT changing the operating mode.
+
+    Sends only SetTime, so the fan keeps its current mode and does not start —
+    this configures the duration a later Timer activation will count down from.
+    set_mode_timer() sends the same SetTime and then SetMode:Timer to actually
+    start the countdown.
+    """
     if speed not in (FanSpeed.HIGH, FanSpeed.MEDIUM, FanSpeed.LOW):
         raise ValueError(f"Invalid speed {speed!r}; must be 'HIGH', 'MEDIUM', or 'LOW'")
     if not (0 <= hours <= 23 and 0 <= minutes <= 59):
@@ -484,7 +490,6 @@ async def set_mode_timer(
             client,
             {"A": ApiCode.SET_TIME, "H": hours, "M": minutes, "R": speed},
         )
-        await _send_command(client, {"A": ApiCode.SET_MODE, "M": FanMode.TIMER})
         return
     await _send_command(
         client,
@@ -495,7 +500,44 @@ async def set_mode_timer(
             "SetTime_Range": speed,
         },
     )
+
+
+async def set_mode_timer(
+    client: BleakClient,
+    speed: str,
+    hours: int = 8,
+    minutes: int = 0,
+    protocol: str = ProtocolVersion.V1,
+) -> None:
+    """Turn the fan on at the given speed for the given duration.
+
+    Saves the duration/speed (SetTime) and then switches to Timer mode, which
+    starts the countdown.
+    """
+    await set_timer(client, speed, hours, minutes, protocol)
+    if protocol == ProtocolVersion.V2:
+        await _send_command(client, {"A": ApiCode.SET_MODE, "M": FanMode.TIMER})
+        return
     await _send_command(client, {"Api": "SetMode", "Mode": FanMode.TIMER})
+
+
+# Firmware default timer duration, used when no duration has been configured.
+DEFAULT_TIMER_HOURS = 8
+DEFAULT_TIMER_MINUTES = 0
+
+
+def resolve_timer_duration(params: FanParameters | None) -> tuple[int, int]:
+    """Return the (hours, minutes) a Timer activation should count down from.
+
+    Falls back to the firmware's 8-hour default when parameters haven't been
+    fetched yet, or when the stored duration is 0h0m — so turning the fan on
+    always runs for a sensible time instead of a no-op zero-length timer.
+    """
+    if params is None:
+        return DEFAULT_TIMER_HOURS, DEFAULT_TIMER_MINUTES
+    if params.timer_hour == 0 and params.timer_minute == 0:
+        return DEFAULT_TIMER_HOURS, DEFAULT_TIMER_MINUTES
+    return params.timer_hour, params.timer_minute
 
 
 async def set_mode_th(client: BleakClient, protocol: str = ProtocolVersion.V1) -> None:

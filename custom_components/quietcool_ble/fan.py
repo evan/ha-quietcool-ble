@@ -156,13 +156,25 @@ class QuietCoolFanEntity(CoordinatorEntity[QuietCoolBLECoordinator], FanEntity):
             )
         speed = _PRESET_TO_BLE.get(preset_mode or PRESET_LOW, FanSpeed.LOW)
         protocol = self.coordinator.fan_info.protocol
+        # Honor the configured timer duration (the Timer Hours/Minutes entities)
+        # rather than forcing the firmware's 8h default on every turn-on.
+        params = self.coordinator.fan_parameters
+        hours, minutes = api.resolve_timer_duration(params)
         await self.coordinator.async_execute(
-            lambda client: api.set_mode_timer(client, speed, protocol=protocol)
+            lambda client: api.set_mode_timer(
+                client, speed, hours=hours, minutes=minutes, protocol=protocol
+            )
         )
         # Optimistic update — show new state immediately without waiting for next poll
         if self.coordinator.fan_state is not None:
             self.coordinator.fan_state = dataclasses.replace(
                 self.coordinator.fan_state, mode=FanMode.TIMER, range=speed
+            )
+        # SetTime also stores the timer speed; keep fan_parameters in sync so the
+        # Timer Hours/Minutes entities reuse the right speed before the next poll.
+        if params is not None:
+            self.coordinator.fan_parameters = dataclasses.replace(
+                params, timer_range=speed
             )
         self.async_write_ha_state()
 

@@ -1,5 +1,8 @@
 # Changelog
 
+### v0.2.18
+- Feat: **set the timer duration from Home Assistant** ([#15](https://github.com/rwarner/ha-quietcool-ble/issues/15)). New **Timer Hours** and **Timer Minutes** number entities write the fan's stored timer duration (via `SetTime`) without starting the fan. Turning the fan on now counts down from this duration instead of always forcing the firmware's 8-hour default — previously every HA turn-on reset the timer to 8h regardless of what the app had set. No more setting the duration in the QuietCool app and switching to Timer mode in HA
+
 ### v0.2.17
 - Feat: **discover name-less controllers.** Some controller revisions omit the BLE local name and advertise the manufacturer-specific signature `3atticfan` instead (BlueZ shows only the MAC). The integration now also matches this signature (`manufacturer_id` `0x6133`, payload prefix `tticfan`) alongside the normal `ATTICFAN*` name, so these fans auto-discover and appear in the manual picker; when only the MAC is known they show as `QuietCool Fan (<address>)` until the real name is read over GATT. Thanks [@viss](https://github.com/viss/ha-quietcool-ble) for reverse-engineering the manufacturer-data variant
 - Minor: new setups now title the device from the name read over GATT (consistent with the fan-name entity), instead of the raw BLE advertisement name; existing entries are unchanged
