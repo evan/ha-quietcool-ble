@@ -7,7 +7,7 @@ Native Bluetooth Low Energy integration for QuietCool attic and whole-house fans
 
 ## Status
 
-**Hardware-confirmed working** on the AFG SMT PRO-2.0 (firmware V3.0) and on firmware 3.9+ / V4.1 controllers (e.g. the AFG SMT ES-3.0). All 10 entities — fan control, smart mode, temperature, humidity, timers, and threshold configuration — verified on real hardware.
+**Hardware-confirmed working** on the AFG SMT PRO-2.0 (firmware V3.0) and on firmware 3.9+ / V4.1 controllers (e.g. the AFG SMT ES-3.0). Fan control, smart mode, temperature, humidity, timers, and threshold configuration are verified on real hardware.
 
 ## Supported Devices
 
@@ -33,6 +33,11 @@ All supported controllers advertise over BLE with a name beginning with `ATTICFA
 **Fan control**
 - Turn on / off
 - Low and High speed presets (plus Medium on 3-speed fans that report it)
+
+**Timer**
+- Set the run **duration** from HA (Timer Hours / Timer Minutes) — no app required
+- Turn-on honors that duration instead of forcing the firmware's 8-hour default
+- Timer countdown sensor (seconds remaining)
 
 **Smart Mode (TH — Thermostat + Humidity)**
 - Automatic on/off based on attic temperature and humidity thresholds

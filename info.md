@@ -2,8 +2,9 @@ Native Bluetooth Low Energy integration for QuietCool attic and whole-house fans
 
 ## Features
 
-- **Auto-discovery** — HA detects the fan automatically when in Bluetooth range
+- **Auto-discovery** — HA detects the fan automatically when in Bluetooth range (including controller revisions that advertise no BLE name, via their `3atticfan` manufacturer-data signature)
 - **Fan control** — turn on/off, select Low or High speed
+- **Timer duration** — set the run duration from HA (Timer Hours / Timer Minutes); turn-on honors it instead of forcing the firmware's 8-hour default
 - **Smart Mode (TH)** — automatic on/off based on configurable temperature and humidity thresholds
 - **Mode selector** — switch between Idle, Timer, and TH smart mode
 - **Threshold controls** — set High/Medium/Low temp and High humidity setpoints from HA
@@ -14,10 +15,12 @@ Native Bluetooth Low Energy integration for QuietCool attic and whole-house fans
 
 ## Supported Devices
 
-All QuietCool ESP32-based controllers that advertise over BLE with a name beginning with `ATTICFAN`:
+All QuietCool ESP32-based controllers that advertise over BLE with a name beginning with `ATTICFAN` (plus name-less revisions that advertise the `3atticfan` manufacturer-data signature):
 
 - AFG SMT PRO-2.0 Smart Attic Fan ✅ Hardware confirmed
-- AFG SMT ES-2.0 / ES-3.0
+- AFG SMT ES-3.0 (3-speed) ✅ Hardware confirmed
+- QC ES-3100 Whole House Fan ✅ Hardware confirmed
+- AFG SMT ES-2.0
 - AFG SMT NR-A (2022 revision)
 
 ## Setup
